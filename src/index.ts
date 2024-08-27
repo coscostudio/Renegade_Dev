@@ -2,7 +2,6 @@ import barba from '@barba/core';
 import { restartWebflow } from '@finsweet/ts-utils';
 import { gsap } from 'gsap';
 
-// ----- Barba Initialization ----- //
 barba.init({
   debug: true,
   sync: true,
@@ -22,14 +21,8 @@ barba.init({
 
       enter(data) {
         const isFromLeft = data.next.namespace === 'index';
-
-        // Set the initial position of the entering page *before* the animation
         gsap.set(data.next.container, { x: isFromLeft ? '-100%' : '100%' });
-
-        // Make the entering page visible
         data.next.container.style.visibility = 'visible';
-
-        // Slide the entering page in
         return gsap.to(data.next.container, {
           x: 0,
           duration: 0.5,
@@ -41,39 +34,37 @@ barba.init({
 
   views: [
     {
-      namespace: 'info',
-      beforeLeave({ current }) {
-        current.container.querySelectorAll('.event-video').forEach((video) => video.pause());
+      namespace: 'index',
+      beforeEnter({ next }) {
+        restartWebflow();
+        loadAutoVideo();
       },
     },
     {
-      namespace: 'index',
-      beforeLeave({ current }) {
-        current.container.querySelectorAll('.event-video').forEach((video) => video.pause());
+      namespace: 'info',
+      afterEnter({ next }) {
+        console.log('Entered info view...');
+        restartWebflow();
       },
     },
   ],
 });
 
-// --- Barba Hooks --- //
-barba.hooks.before(() => {
-  document.querySelectorAll('.event-video').forEach((video) => video.pause());
-});
-
-barba.hooks.enter(() => {
-  window.scrollTo(0, 0);
-  const preloader = document.querySelector('.loader_wrapper');
-  if (preloader) {
-    preloader.style.display = 'none';
-  }
-});
-
-barba.hooks.after(async ({ next }) => {
-  if ('scrollRestoration' in history) {
-    history.scrollRestoration = 'manual';
-  }
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('Attaching initial event listeners...');
   restartWebflow();
-
-  // Wait for a short delay
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  loadAutoVideo();
 });
+
+barba.hooks.after(() => {
+  console.log('Re-attaching Webflow interactions after Barba.js transition...');
+  restartWebflow();
+  loadAutoVideo();
+});
+
+function loadAutoVideo() {
+  const script = document.createElement('script');
+  script.src = 'https://cdn.jsdelivr.net/npm/@finsweet/attributes-autovideo@1/autovideo.js';
+  script.defer = true;
+  document.body.appendChild(script);
+}
