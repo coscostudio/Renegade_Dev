@@ -1,9 +1,11 @@
 import barba from '@barba/core';
 import { restartWebflow } from '@finsweet/ts-utils';
 import { gsap } from 'gsap';
+import { ScrollToPlugin } from 'gsap/ScrollToPlugin';
+gsap.registerPlugin(ScrollToPlugin);
 
 barba.init({
-  debug: true,
+  debug: false,
   sync: true,
   transitions: [
     {
@@ -35,31 +37,67 @@ barba.init({
   views: [
     {
       namespace: 'index',
-      beforeEnter({ next }) {
-        restartWebflow();
+      afterEnter({ next }) {
         loadAutoVideo();
+        setupAccordionScroll();
       },
     },
     {
       namespace: 'info',
       afterEnter({ next }) {
-        console.log('Entered info view...');
-        restartWebflow();
+        loadAutoVideo();
+        setupAccordionScroll();
       },
     },
   ],
 });
 
-document.addEventListener('DOMContentLoaded', () => {
-  console.log('Attaching initial event listeners...');
-  restartWebflow();
-  loadAutoVideo();
+
+function setupAccordionScroll() {
+  document.querySelectorAll('.Accordion_Wrapper').forEach(wrapper => {
+    wrapper.addEventListener('click', () => {
+      gsap.to(window, {
+        duration: 1,
+        scrollTo: {
+          y: wrapper,
+          offsetY: 60px,  
+        },
+        ease: 'power2.inOut',
+      });
+    });
+  });
+}
+
+// --- Barba Hooks --- //
+barba.hooks.beforeLeave(({ current }) => {
+  current.container.querySelectorAll('.event-video').forEach((video) => {
+    video.pause();
+    video.currentTime = 0;
+  });
 });
 
-barba.hooks.after(() => {
-  console.log('Re-attaching Webflow interactions after Barba.js transition...');
+barba.hooks.enter(() => {
+  window.scrollTo(0, 0);
+  const preloader = document.querySelector('.loader_wrapper');
+  if (preloader) {
+    preloader.style.display = 'none';
+  }
+});
+
+barba.hooks.after(async ({ next }) => {
+  if ('scrollRestoration' in history) {
+    history.scrollRestoration = 'manual';
+  }
   restartWebflow();
+  setupAccordionScroll();
+
+  // Wait for a short delay
+  await new Promise((resolve) => setTimeout(resolve, 100));
+});
+
+document.addEventListener('DOMContentLoaded', () => {
   loadAutoVideo();
+  setupAccordionScroll();
 });
 
 function loadAutoVideo() {
