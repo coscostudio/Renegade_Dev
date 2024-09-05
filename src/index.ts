@@ -1,11 +1,66 @@
 import barba from '@barba/core';
 import { restartWebflow } from '@finsweet/ts-utils';
 import { gsap } from 'gsap';
-import { ScrollToPlugin } from 'gsap/ScrollToPlugin';
-gsap.registerPlugin(ScrollToPlugin);
+
+function initializeAccordion() {
+  const accordion = (function () {
+    const $accordion = $('.js-accordion');
+    const $accordion_item = $('.js-accordion-item'); // Target entire item
+
+    const settings: { speed: number; oneOpen: boolean } = {
+      speed: 400,
+      oneOpen: true,
+    };
+
+    return {
+      init($settings: Partial<{ speed: number; oneOpen: boolean }>) {
+        $accordion_item.on('click', function () {
+          const $this = $(this);
+          accordion.toggle($this);
+        });
+
+        $.extend(settings, $settings);
+
+        if (settings.oneOpen && $('.js-accordion-item.active').length > 1) {
+          $('.js-accordion-item.active:not(:first)').removeClass('active');
+        }
+
+        $('.js-accordion-item.active').find('> .js-accordion-body').show();
+      },
+      toggle($this: JQuery<HTMLElement>) {
+        const accordionBody = $this.find('.js-accordion-body');
+        const accordionItem = $this.closest('.js-accordion-item');
+
+        console.log('Accordion toggle initiated');
+
+        if (
+          settings.oneOpen &&
+          $this[0] !== $this.closest('.js-accordion').find('> .js-accordion-item.active')[0]
+        ) {
+          console.log('Closing other accordion items');
+          // Close other accordion items
+          $this
+            .closest('.js-accordion')
+            .find('> .js-accordion-item')
+            .removeClass('active')
+            .find('.js-accordion-body')
+            .slideUp();
+        }
+
+        // Toggle active class and slide toggle for the body
+        $this.toggleClass('active');
+        accordionBody.stop().slideToggle(settings.speed);
+      },
+    };
+  })();
+
+  $(document).ready(function () {
+    accordion.init({ speed: 400, oneOpen: true });
+  });
+}
 
 barba.init({
-  debug: false,
+  debug: true,
   sync: true,
   transitions: [
     {
@@ -38,43 +93,15 @@ barba.init({
     {
       namespace: 'index',
       afterEnter({ next }) {
+        restartWebflow();
         loadAutoVideo();
-        setupAccordionScroll();
-      },
-    },
-    {
-      namespace: 'info',
-      afterEnter({ next }) {
-        loadAutoVideo();
-        setupAccordionScroll();
+        initializeAccordion();
       },
     },
   ],
 });
 
-
-function setupAccordionScroll() {
-  document.querySelectorAll('.Accordion_Wrapper').forEach(wrapper => {
-    wrapper.addEventListener('click', () => {
-      gsap.to(window, {
-        duration: 1,
-        scrollTo: {
-          y: wrapper,
-          offsetY: 60px,  
-        },
-        ease: 'power2.inOut',
-      });
-    });
-  });
-}
-
 // --- Barba Hooks --- //
-barba.hooks.beforeLeave(({ current }) => {
-  current.container.querySelectorAll('.event-video').forEach((video) => {
-    video.pause();
-    video.currentTime = 0;
-  });
-});
 
 barba.hooks.enter(() => {
   window.scrollTo(0, 0);
@@ -89,15 +116,12 @@ barba.hooks.after(async ({ next }) => {
     history.scrollRestoration = 'manual';
   }
   restartWebflow();
-  setupAccordionScroll();
 
-  // Wait for a short delay
   await new Promise((resolve) => setTimeout(resolve, 100));
 });
 
 document.addEventListener('DOMContentLoaded', () => {
   loadAutoVideo();
-  setupAccordionScroll();
 });
 
 function loadAutoVideo() {
