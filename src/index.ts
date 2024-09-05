@@ -7,13 +7,13 @@ function initializeAccordion() {
     const $accordion = $('.js-accordion');
     const $accordion_item = $('.js-accordion-item'); // Target entire item
 
-    const settings: { speed: number; oneOpen: boolean } = {
+    const settings = {
       speed: 400,
       oneOpen: true,
     };
 
     return {
-      init($settings: Partial<{ speed: number; oneOpen: boolean }>) {
+      init($settings) {
         $accordion_item.on('click', function () {
           const $this = $(this);
           accordion.toggle($this);
@@ -27,29 +27,43 @@ function initializeAccordion() {
 
         $('.js-accordion-item.active').find('> .js-accordion-body').show();
       },
-      toggle($this: JQuery<HTMLElement>) {
+      toggle($this) {
         const accordionBody = $this.find('.js-accordion-body');
         const accordionItem = $this.closest('.js-accordion-item');
-
-        console.log('Accordion toggle initiated');
+        const videoElement = $this.find('.event-video'); // Target video
 
         if (
           settings.oneOpen &&
           $this[0] !== $this.closest('.js-accordion').find('> .js-accordion-item.active')[0]
         ) {
-          console.log('Closing other accordion items');
-          // Close other accordion items
           $this
             .closest('.js-accordion')
             .find('> .js-accordion-item')
             .removeClass('active')
             .find('.js-accordion-body')
-            .slideUp();
+            .slideUp(settings.speed);
+
+          // Fade out video if accordion is closing
+          $this.closest('.js-accordion').find('.event-video').fadeOut(settings.speed);
         }
 
-        // Toggle active class and slide toggle for the body
+        // Toggle active class and slide toggle for the accordion-body
         $this.toggleClass('active');
-        accordionBody.stop().slideToggle(settings.speed);
+
+        // Start fade-in immediately with accordion expansion
+        accordionBody.stop().slideToggle({
+          duration: settings.speed,
+          start: function () {
+            videoElement.css({ display: 'block', opacity: 0 }); // Ensure it's hidden initially
+            videoElement.animate({ opacity: 1 }, settings.speed); // Fade in video as accordion expands
+          },
+          complete: function () {
+            // Ensure video fades out when the accordion closes
+            if (!accordionItem.hasClass('active')) {
+              videoElement.fadeOut(settings.speed);
+            }
+          },
+        });
       },
     };
   })();
