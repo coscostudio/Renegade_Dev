@@ -204,6 +204,13 @@ function initializeAccordion() {
       ease: 'power3.inOut',
     };
 
+    function getViewportHeight() {
+      if (window.innerWidth <= 768) { // Mobile breakpoint
+        return window.innerHeight + 'px';
+      }
+      return '100vh';
+    }
+
     function scrollToTop($element) {
       return gsap.to(window, {
         duration: settings.duration,
@@ -226,6 +233,7 @@ function initializeAccordion() {
         const videoElement = $clicked.find('.event-video')[0];
         const accordionHeader = $clicked.find('.js-accordion-header')[0];
         const isOpening = !$clicked.hasClass('active');
+        let resizeObserver;
 
         if (isOpening) {
           const $openItem = $('.js-accordion-item.active');
@@ -249,7 +257,15 @@ function initializeAccordion() {
                     });
 
                     const openState = Flip.getState(accordionBody);
-                    gsap.set(accordionBody, { height: '100vh' });
+                    gsap.set(accordionBody, { height: getViewportHeight() });
+
+                    // Initialize ResizeObserver for dynamic height updates
+                    resizeObserver = new ResizeObserver(() => {
+                      if ($clicked.hasClass('active')) {
+                        gsap.set(accordionBody, { height: getViewportHeight() });
+                      }
+                    });
+                    resizeObserver.observe(document.documentElement);
 
                     // Animate padding alongside FLIP animation
                     gsap.to(accordionHeader, {
@@ -300,7 +316,6 @@ function initializeAccordion() {
                 },
                 'start'
               )
-              // Animate padding back to original alongside closing
               .to(
                 openHeader,
                 {
@@ -339,7 +354,15 @@ function initializeAccordion() {
                 });
 
                 const openState = Flip.getState(accordionBody);
-                gsap.set(accordionBody, { height: '100vh' });
+                gsap.set(accordionBody, { height: getViewportHeight() });
+
+                // Initialize ResizeObserver for dynamic height updates
+                resizeObserver = new ResizeObserver(() => {
+                  if ($clicked.hasClass('active')) {
+                    gsap.set(accordionBody, { height: getViewportHeight() });
+                  }
+                });
+                resizeObserver.observe(document.documentElement);
 
                 // Animate padding for direct opens
                 gsap.to(accordionHeader, {
@@ -375,6 +398,17 @@ function initializeAccordion() {
                 'start+=0.2'
               );
           }
+
+          // Cleanup function for ResizeObserver
+          const cleanup = () => {
+            if (resizeObserver) {
+              resizeObserver.disconnect();
+            }
+            $clicked.off('click', cleanup);
+          };
+          
+          $clicked.on('click', cleanup);
+          
         } else {
           const closeTl = gsap.timeline();
 
@@ -391,7 +425,6 @@ function initializeAccordion() {
               },
               'start'
             )
-            // Animate padding back alongside closing
             .to(
               accordionHeader,
               {
@@ -413,6 +446,10 @@ function initializeAccordion() {
                 onComplete: () => {
                   $clicked.removeClass('active');
                   gsap.set(accordionBody, { display: 'none' });
+                  // Cleanup ResizeObserver when closing
+                  if (resizeObserver) {
+                    resizeObserver.disconnect();
+                  }
                 },
               });
             }, 'start+=0.2');
@@ -421,7 +458,7 @@ function initializeAccordion() {
     };
   })();
 
-  // Original styles without padding transition
+  // Updated styles with mobile viewport support
   const style = document.createElement('style');
   style.textContent = `
     .js-accordion-item {
@@ -438,7 +475,8 @@ function initializeAccordion() {
     }
     
     .js-accordion-body {
-      height: 100vh;
+      height: 100vh; /* Fallback */
+      height: 100svh; /* Dynamic viewport height */
       width: 100%;
       margin: 0;
       padding: 0;
@@ -454,6 +492,12 @@ function initializeAccordion() {
       width: 100%;
       height: 100%;
       object-fit: cover;
+    }
+
+    @supports not (height: 100svh) {
+      .js-accordion-body {
+        height: -webkit-fill-available; /* iOS Fallback */
+      }
     }
   `;
   document.head.appendChild(style);
