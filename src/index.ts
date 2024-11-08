@@ -1,5 +1,6 @@
 import barba from '@barba/core';
 import { restartWebflow } from '@finsweet/ts-utils';
+import { preloader } from './preloader';
 import { gsap } from 'gsap';
 import { Flip } from 'gsap/Flip';
 import { ScrollToPlugin } from 'gsap/ScrollToPlugin';
@@ -246,6 +247,11 @@ function initializeAccordion() {
   // Initialize accordion
   accordion.init();
 }
+
+// preloader
+document.addEventListener('DOMContentLoaded', () => {
+  preloader.playPreloader().catch(console.error);
+});
 
 barba.init({
   debug: true,
