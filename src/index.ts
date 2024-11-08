@@ -1,9 +1,10 @@
 import barba from '@barba/core';
 import { restartWebflow } from '@finsweet/ts-utils';
-import { preloader } from './preloader';
 import { gsap } from 'gsap';
 import { Flip } from 'gsap/Flip';
 import { ScrollToPlugin } from 'gsap/ScrollToPlugin';
+
+import { preloader } from './preloader';
 gsap.registerPlugin(Flip, ScrollToPlugin);
 
 function initializeAccordion() {
