@@ -1,76 +1,250 @@
 import barba from '@barba/core';
 import { restartWebflow } from '@finsweet/ts-utils';
 import { gsap } from 'gsap';
+import { Flip } from 'gsap/Flip';
+import { ScrollToPlugin } from 'gsap/ScrollToPlugin';
+gsap.registerPlugin(Flip, ScrollToPlugin);
 
 function initializeAccordion() {
   const accordion = (function () {
-    const $accordion = $('.js-accordion');
-    const $accordion_item = $('.js-accordion-item'); // Target entire item
-
     const settings = {
-      speed: 400,
-      oneOpen: true,
+      duration: 1,
+      ease: 'power3.inOut',
     };
 
+    function scrollToTop($element) {
+      return gsap.to(window, {
+        duration: settings.duration,
+        scrollTo: $element.offset().top,
+        ease: settings.ease,
+      });
+    }
+
+    function correctPosition($element) {
+      const currentTop = $element.offset().top;
+      if (currentTop > 1) {
+        // If not already at top
+        return gsap.to(window, {
+          duration: settings.duration / 2,
+          scrollTo: $element.offset().top,
+          ease: 'power2.out',
+        });
+      }
+    }
+
     return {
-      init($settings) {
-        $accordion_item.on('click', function () {
-          const $this = $(this);
-          accordion.toggle($this);
+      init() {
+        $('.js-accordion-item').on('click', function () {
+          accordion.toggle($(this));
         });
-
-        $.extend(settings, $settings);
-
-        if (settings.oneOpen && $('.js-accordion-item.active').length > 1) {
-          $('.js-accordion-item.active:not(:first)').removeClass('active');
-        }
-
-        $('.js-accordion-item.active').find('> .js-accordion-body').show();
       },
-      toggle($this) {
-        const accordionBody = $this.find('.js-accordion-body');
-        const accordionItem = $this.closest('.js-accordion-item');
-        const videoElement = $this.find('.event-video'); // Target video
+      toggle($clicked) {
+        const accordionBody = $clicked.find('.js-accordion-body')[0];
+        const videoElement = $clicked.find('.event-video')[0];
+        const isOpening = !$clicked.hasClass('active');
 
-        if (
-          settings.oneOpen &&
-          $this[0] !== $this.closest('.js-accordion').find('> .js-accordion-item.active')[0]
-        ) {
-          $this
-            .closest('.js-accordion')
-            .find('> .js-accordion-item')
-            .removeClass('active')
-            .find('.js-accordion-body')
-            .slideUp(settings.speed);
+        if (isOpening) {
+          const $openItem = $('.js-accordion-item.active');
+          if ($openItem.length) {
+            // Create a specific timeline for closing
+            const closeTl = gsap.timeline({
+              onComplete: () => {
+                // Calculate position before any changes
+                const targetPosition = $clicked.offset().top;
 
-          // Fade out video if accordion is closing
-          $this.closest('.js-accordion').find('.event-video').fadeOut(settings.speed);
+                // Start open sequence
+                const openTl = gsap.timeline();
+
+                openTl
+                  // First scroll to position
+                  .add(scrollToTop($clicked), 'start')
+                  // Then start expansion
+                  .add(() => {
+                    $clicked.addClass('active');
+                    gsap.set(accordionBody, {
+                      display: 'block',
+                      height: 0,
+                      transformOrigin: 'top', // Force expansion from top
+                    });
+
+                    const openState = Flip.getState(accordionBody);
+                    gsap.set(accordionBody, { height: '100vh' });
+
+                    return Flip.from(openState, {
+                      duration: settings.duration,
+                      ease: settings.ease,
+                      absoluteOnLeave: true,
+                      onComplete: () => {
+                        // Check and correct position after expansion
+                        correctPosition($clicked);
+                      },
+                    });
+                  }, 'start+=0.1')
+                  .to(
+                    videoElement,
+                    {
+                      duration: settings.duration,
+                      opacity: 1,
+                      ease: 'power2.out',
+                      onStart: () => {
+                        videoElement.setAttribute('data-autoplay', 'true');
+                        window.dispatchEvent(new Event('resize'));
+                      },
+                    },
+                    'start+=0.2'
+                  );
+              },
+            });
+
+            // Close sequence
+            closeTl
+              .to(
+                $openItem.find('.event-video')[0],
+                {
+                  duration: settings.duration / 2,
+                  opacity: 0,
+                  ease: 'power2.in',
+                  onComplete: () => {
+                    $openItem.find('.event-video')[0].setAttribute('data-autoplay', 'false');
+                  },
+                },
+                'start'
+              )
+              .add(() => {
+                const openBody = $openItem.find('.js-accordion-body')[0];
+                const closeState = Flip.getState(openBody);
+                gsap.set(openBody, { height: 0 });
+
+                return Flip.from(closeState, {
+                  duration: settings.duration,
+                  ease: settings.ease,
+                  absoluteOnLeave: true,
+                  onComplete: () => {
+                    $openItem.removeClass('active');
+                    gsap.set(openBody, { display: 'none' });
+                  },
+                });
+              }, 'start+=0.2');
+          } else {
+            // No open accordion, just open immediately
+            const openTl = gsap.timeline();
+
+            openTl
+              .add(scrollToTop($clicked), 'start')
+              .add(() => {
+                $clicked.addClass('active');
+                gsap.set(accordionBody, {
+                  display: 'block',
+                  height: 0,
+                  transformOrigin: 'top', // Force expansion from top
+                });
+
+                const openState = Flip.getState(accordionBody);
+                gsap.set(accordionBody, { height: '100vh' });
+
+                return Flip.from(openState, {
+                  duration: settings.duration,
+                  ease: settings.ease,
+                  absoluteOnLeave: true,
+                  onComplete: () => {
+                    // Check position even for fresh opens
+                    correctPosition($clicked);
+                  },
+                });
+              }, 'start')
+              .to(
+                videoElement,
+                {
+                  duration: settings.duration,
+                  opacity: 1,
+                  ease: 'power2.out',
+                  onStart: () => {
+                    videoElement.setAttribute('data-autoplay', 'true');
+                    window.dispatchEvent(new Event('resize'));
+                  },
+                },
+                'start+=0.2'
+              );
+          }
+        } else {
+          // Just closing
+          const closeTl = gsap.timeline();
+
+          closeTl
+            .to(
+              videoElement,
+              {
+                duration: settings.duration / 2,
+                opacity: 0,
+                ease: 'power2.in',
+                onComplete: () => {
+                  videoElement.setAttribute('data-autoplay', 'false');
+                },
+              },
+              'start'
+            )
+            .add(() => {
+              const closeState = Flip.getState(accordionBody);
+              gsap.set(accordionBody, { height: 0 });
+
+              return Flip.from(closeState, {
+                duration: settings.duration,
+                ease: settings.ease,
+                absoluteOnLeave: true,
+                onComplete: () => {
+                  $clicked.removeClass('active');
+                  gsap.set(accordionBody, { display: 'none' });
+                },
+              });
+            }, 'start+=0.2');
         }
-
-        // Toggle active class and slide toggle for the accordion-body
-        $this.toggleClass('active');
-
-        // Start fade-in immediately with accordion expansion
-        accordionBody.stop().slideToggle({
-          duration: settings.speed,
-          start: function () {
-            videoElement.css({ display: 'block', opacity: 0 }); // Ensure it's hidden initially
-            videoElement.animate({ opacity: 1 }, settings.speed); // Fade in video as accordion expands
-          },
-          complete: function () {
-            // Ensure video fades out when the accordion closes
-            if (!accordionItem.hasClass('active')) {
-              videoElement.fadeOut(settings.speed);
-            }
-          },
-        });
       },
     };
   })();
 
-  $(document).ready(function () {
-    accordion.init({ speed: 400, oneOpen: true });
-  });
+  // Add styles
+  const style = document.createElement('style');
+  style.textContent = `
+    .js-accordion-item {
+      background-color: transparent;
+      transition: background-color 0.3s ease;
+    }
+    
+    .js-accordion-item:not(.active):hover {
+      background-color: #F3F2F0 !important;
+    }
+    
+    .js-accordion-item.active {
+      background-color: #000 !important;
+    }
+    
+    .js-accordion-body {
+      height: 100vh;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      position: relative;
+      background-color: #000;
+      display: none;
+      transform-origin: top center;
+    }
+    
+    .js-accordion-body .event-video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  `;
+  document.head.appendChild(style);
+
+  // Initialize GSAP plugins
+  gsap.registerPlugin(Flip, ScrollToPlugin);
+
+  // Initialize accordion
+  accordion.init();
 }
 
 barba.init({
