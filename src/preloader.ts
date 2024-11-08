@@ -1,12 +1,10 @@
-// src/preloader.js
+// src/preloader.ts
 import { gsap } from 'gsap';
 
 export class VideoPreloader {
-  constructor() {
-    this.initialized = false;
-  }
+  private initialized: boolean = false;
 
-  init() {
+  private init(): void {
     if (this.initialized) return;
 
     const style = document.createElement('style');
@@ -67,16 +65,16 @@ export class VideoPreloader {
     this.initialized = true;
   }
 
-  async playPreloader() {
+  async playPreloader(): Promise<void> {
     this.init();
 
-    const preloader = document.querySelector('.preloader-container');
-    const video = preloader.querySelector('.preloader-video');
-    const pageWrapper = document.querySelector('.page-wrapper');
+    const preloader = document.querySelector('.preloader-container') as HTMLElement;
+    const video = preloader.querySelector('.preloader-video') as HTMLVideoElement;
+    const pageWrapper = document.querySelector('.page-wrapper') as HTMLElement;
 
     // Store original page wrapper styles
-    const originalPosition = window.getComputedStyle(pageWrapper).position;
-    const originalWidth = window.getComputedStyle(pageWrapper).width;
+    const computedStyle = window.getComputedStyle(pageWrapper);
+    const originalWidth = computedStyle.width;
 
     // Immediately set initial states
     document.body.classList.add('loading');
@@ -89,7 +87,7 @@ export class VideoPreloader {
     });
 
     // Play video and set up transition
-    await new Promise((resolve) => {
+    await new Promise<void>((resolve) => {
       video.muted = true;
       video.playsInline = true;
 
@@ -108,13 +106,12 @@ export class VideoPreloader {
         if (!isNaN(video.duration)) {
           clearInterval(checkVideo);
 
-          // Start transition 0.3 seconds before video ends
           setTimeout(
             () => {
               const tl = gsap.timeline({
                 onComplete: () => {
-                  // First reset page wrapper styles
-                  pageWrapper.style.position = originalPosition;
+                  // Explicitly set back to static
+                  pageWrapper.style.position = 'static';
                   pageWrapper.style.width = originalWidth;
                   pageWrapper.style.transform = 'none';
 
@@ -129,20 +126,20 @@ export class VideoPreloader {
 
               tl.to(preloader, {
                 y: '-100vh',
-                duration: 0.3, // Match duration to remaining video time
+                duration: 0.3,
                 ease: 'power2.inOut',
               }).to(
                 pageWrapper,
                 {
                   y: 0,
-                  duration: 0.3, // Match duration to remaining video time
+                  duration: 0.3,
                   ease: 'power2.inOut',
                 },
                 '<'
               );
             },
             (video.duration - 0.3) * 1000
-          ); // Changed to 0.3 seconds
+          );
         }
       }, 100);
 
@@ -153,8 +150,8 @@ export class VideoPreloader {
 
           const tl = gsap.timeline({
             onComplete: () => {
-              // First reset page wrapper styles
-              pageWrapper.style.position = originalPosition;
+              // Explicitly set back to static
+              pageWrapper.style.position = 'static';
               pageWrapper.style.width = originalWidth;
               pageWrapper.style.transform = 'none';
 

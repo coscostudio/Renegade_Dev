@@ -17,21 +17,12 @@ function initializeAccordion() {
     function scrollToTop($element) {
       return gsap.to(window, {
         duration: settings.duration,
-        scrollTo: $element.offset().top,
+        scrollTo: {
+          y: $element.offset().top,
+          autoKill: false,
+        },
         ease: settings.ease,
       });
-    }
-
-    function correctPosition($element) {
-      const currentTop = $element.offset().top;
-      if (currentTop > 1) {
-        // If not already at top
-        return gsap.to(window, {
-          duration: settings.duration / 2,
-          scrollTo: $element.offset().top,
-          ease: 'power2.out',
-        });
-      }
     }
 
     return {
@@ -43,42 +34,50 @@ function initializeAccordion() {
       toggle($clicked) {
         const accordionBody = $clicked.find('.js-accordion-body')[0];
         const videoElement = $clicked.find('.event-video')[0];
+        const accordionHeader = $clicked.find('.js-accordion-header')[0];
         const isOpening = !$clicked.hasClass('active');
 
         if (isOpening) {
           const $openItem = $('.js-accordion-item.active');
           if ($openItem.length) {
-            // Create a specific timeline for closing
+            const openVideo = $openItem.find('.event-video')[0];
+            const openBody = $openItem.find('.js-accordion-body')[0];
+            const openHeader = $openItem.find('.js-accordion-header')[0];
+
             const closeTl = gsap.timeline({
               onComplete: () => {
-                // Calculate position before any changes
                 const targetPosition = $clicked.offset().top;
-
-                // Start open sequence
                 const openTl = gsap.timeline();
 
                 openTl
-                  // First scroll to position
-                  .add(scrollToTop($clicked), 'start')
-                  // Then start expansion
+                  .add(() => scrollToTop($clicked), 'start')
                   .add(() => {
                     $clicked.addClass('active');
                     gsap.set(accordionBody, {
                       display: 'block',
                       height: 0,
-                      transformOrigin: 'top', // Force expansion from top
                     });
 
                     const openState = Flip.getState(accordionBody);
                     gsap.set(accordionBody, { height: '100vh' });
 
+                    // Animate padding alongside FLIP animation
+                    gsap.to(accordionHeader, {
+                      duration: settings.duration,
+                      paddingTop: 60,
+                      paddingBottom: 60,
+                      ease: settings.ease,
+                    });
+
                     return Flip.from(openState, {
                       duration: settings.duration,
                       ease: settings.ease,
                       absoluteOnLeave: true,
-                      onComplete: () => {
-                        // Check and correct position after expansion
-                        correctPosition($clicked);
+                      onUpdate: function () {
+                        const currentTop = $clicked.offset().top;
+                        if (Math.abs(currentTop - targetPosition) > 2) {
+                          gsap.set(window, { scrollTo: targetPosition });
+                        }
                       },
                     });
                   }, 'start+=0.1')
@@ -98,22 +97,31 @@ function initializeAccordion() {
               },
             });
 
-            // Close sequence
             closeTl
               .to(
-                $openItem.find('.event-video')[0],
+                openVideo,
                 {
                   duration: settings.duration / 2,
                   opacity: 0,
                   ease: 'power2.in',
                   onComplete: () => {
-                    $openItem.find('.event-video')[0].setAttribute('data-autoplay', 'false');
+                    openVideo.setAttribute('data-autoplay', 'false');
                   },
                 },
                 'start'
               )
+              // Animate padding back to original alongside closing
+              .to(
+                openHeader,
+                {
+                  duration: settings.duration,
+                  paddingTop: '', // Back to original Webflow value
+                  paddingBottom: '', // Back to original Webflow value
+                  ease: settings.ease,
+                },
+                'start'
+              )
               .add(() => {
-                const openBody = $openItem.find('.js-accordion-body')[0];
                 const closeState = Flip.getState(openBody);
                 gsap.set(openBody, { height: 0 });
 
@@ -128,8 +136,8 @@ function initializeAccordion() {
                 });
               }, 'start+=0.2');
           } else {
-            // No open accordion, just open immediately
             const openTl = gsap.timeline();
+            const targetPosition = $clicked.offset().top;
 
             openTl
               .add(scrollToTop($clicked), 'start')
@@ -138,19 +146,28 @@ function initializeAccordion() {
                 gsap.set(accordionBody, {
                   display: 'block',
                   height: 0,
-                  transformOrigin: 'top', // Force expansion from top
                 });
 
                 const openState = Flip.getState(accordionBody);
                 gsap.set(accordionBody, { height: '100vh' });
 
+                // Animate padding for direct opens
+                gsap.to(accordionHeader, {
+                  duration: settings.duration,
+                  paddingTop: 60,
+                  paddingBottom: 60,
+                  ease: settings.ease,
+                });
+
                 return Flip.from(openState, {
                   duration: settings.duration,
                   ease: settings.ease,
                   absoluteOnLeave: true,
-                  onComplete: () => {
-                    // Check position even for fresh opens
-                    correctPosition($clicked);
+                  onUpdate: function () {
+                    const currentTop = $clicked.offset().top;
+                    if (Math.abs(currentTop - targetPosition) > 2) {
+                      gsap.set(window, { scrollTo: targetPosition });
+                    }
                   },
                 });
               }, 'start')
@@ -169,7 +186,6 @@ function initializeAccordion() {
               );
           }
         } else {
-          // Just closing
           const closeTl = gsap.timeline();
 
           closeTl
@@ -182,6 +198,17 @@ function initializeAccordion() {
                 onComplete: () => {
                   videoElement.setAttribute('data-autoplay', 'false');
                 },
+              },
+              'start'
+            )
+            // Animate padding back alongside closing
+            .to(
+              accordionHeader,
+              {
+                duration: settings.duration,
+                paddingTop: '', // Back to original Webflow value
+                paddingBottom: '', // Back to original Webflow value
+                ease: settings.ease,
               },
               'start'
             )
@@ -204,7 +231,7 @@ function initializeAccordion() {
     };
   })();
 
-  // Add styles
+  // Original styles without padding transition
   const style = document.createElement('style');
   style.textContent = `
     .js-accordion-item {
@@ -228,7 +255,6 @@ function initializeAccordion() {
       position: relative;
       background-color: #000;
       display: none;
-      transform-origin: top center;
     }
     
     .js-accordion-body .event-video {
