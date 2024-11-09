@@ -209,6 +209,17 @@ function initializeAccordion() {
     }
 
     function scrollToTop($element) {
+      // Force scroll to 0 when in full mobile viewport
+      if (window.innerWidth <= 768 && window.visualViewport) {
+        return gsap.to(window, {
+          duration: settings.duration,
+          scrollTo: 0,
+          autoKill: false,
+          ease: settings.ease,
+        });
+      }
+
+      // Existing behavior for all other cases
       return gsap.to(window, {
         duration: settings.duration,
         scrollTo: {
@@ -403,9 +414,8 @@ function initializeAccordion() {
             }
             $clicked.off('click', cleanup);
           };
-          
+
           $clicked.on('click', cleanup);
-          
         } else {
           const closeTl = gsap.timeline();
 
