@@ -205,10 +205,7 @@ function initializeAccordion() {
     };
 
     function getViewportHeight() {
-      if (window.innerWidth <= 768) { // Mobile breakpoint
-        return window.innerHeight + 'px';
-      }
-      return '100vh';
+      return '100dvh';
     }
 
     function scrollToTop($element) {
@@ -475,8 +472,8 @@ function initializeAccordion() {
     }
     
     .js-accordion-body {
-      height: 100vh; /* Fallback */
-      height: 100svh; /* Dynamic viewport height */
+      height: 100vh;  /* Fallback for older browsers */
+      height: 100dvh; /* Modern browsers will use this */
       width: 100%;
       margin: 0;
       padding: 0;
@@ -492,12 +489,6 @@ function initializeAccordion() {
       width: 100%;
       height: 100%;
       object-fit: cover;
-    }
-
-    @supports not (height: 100svh) {
-      .js-accordion-body {
-        height: -webkit-fill-available; /* iOS Fallback */
-      }
     }
   `;
   document.head.appendChild(style);
