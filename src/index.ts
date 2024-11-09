@@ -171,13 +171,13 @@ class VideoPreloader {
 
           tl.to(preloader, {
             y: '-100vh',
-            duration: 0.3,
+            duration: 1,
             ease: 'power2.inOut',
           }).to(
             pageWrapper,
             {
               y: 0,
-              duration: 0.3,
+              duration: 1,
               ease: 'power2.inOut',
             },
             '<'
