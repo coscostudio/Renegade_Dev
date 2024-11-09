@@ -23,7 +23,8 @@ class VideoPreloader {
         top: 0 !important;
         left: 0 !important;
         width: 100% !important;
-        height: 100vh !important;
+        height: 101vh !important;
+        height: 101dvh !important;
         z-index: 9999 !important;
         background: black !important;
         display: block !important;
@@ -130,19 +131,19 @@ class VideoPreloader {
 
               tl.to(preloader, {
                 y: '-100vh',
-                duration: 0.3,
+                duration: 1,
                 ease: 'power2.inOut',
               }).to(
                 pageWrapper,
                 {
                   y: 0,
-                  duration: 0.3,
+                  duration: 1,
                   ease: 'power2.inOut',
                 },
                 '<'
               );
             },
-            (video.duration - 0.3) * 1000
+            (video.duration - 1) * 1000
           );
         }
       }, 100);
@@ -205,7 +206,7 @@ function initializeAccordion() {
     };
 
     function getViewportHeight() {
-      return '100dvh';
+      return '101dvh';
     }
 
     function scrollToTop($element) {
@@ -482,8 +483,8 @@ function initializeAccordion() {
     }
     
     .js-accordion-body {
-      height: 100vh;  /* Fallback for older browsers */
-      height: 100dvh; /* Modern browsers will use this */
+      height: 101vh;  /* Fallback for older browsers */
+      height: 101dvh; /* Modern browsers will use this */
       width: 100%;
       margin: 0;
       padding: 0;
