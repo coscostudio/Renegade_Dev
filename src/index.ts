@@ -255,13 +255,13 @@ class VideoPreloader {
               tl.to(preloader, {
                 y: '-100vh',
                 duration: 1,
-                ease: 'power2.inOut',
+                ease: 'expo.inOut',
               }).to(
                 pageWrapper,
                 {
                   y: 0,
                   duration: 1,
-                  ease: 'power2.inOut',
+                  ease: 'expo.inOut',
                 },
                 '<'
               );
@@ -295,13 +295,13 @@ class VideoPreloader {
           tl.to(preloader, {
             y: '-100vh',
             duration: 1,
-            ease: 'power2.inOut',
+            ease: 'expo.inOut',
           }).to(
             pageWrapper,
             {
               y: 0,
               duration: 1,
-              ease: 'power2.inOut',
+              ease: 'expo.inOut',
             },
             '<'
           );
@@ -325,27 +325,56 @@ function initializeAccordion() {
   const accordion = (function () {
     const settings = {
       duration: 1,
-      ease: 'power3.inOut',
+      ease: 'expo.inOut',
     };
+
+    // Add animation state tracking
+    let isAnimating = false;
 
     function getViewportHeight() {
       return '101dvh';
     }
 
-    function scrollToTop($element) {
-      return gsap.to(window, {
-        duration: settings.duration,
-        scrollTo: {
-          y: $element.offset().top,
-          autoKill: false,
-        },
-        ease: settings.ease,
-      });
+    function resetVideo(videoElement) {
+      if (videoElement && videoElement.tagName === 'VIDEO') {
+        try {
+          // Force video pause and reset
+          videoElement.pause();
+          // Reset time after a brief delay to ensure it takes
+          setTimeout(() => {
+            videoElement.currentTime = 0;
+            videoElement.setAttribute('data-autoplay', 'false');
+          }, 50);
+        } catch (e) {
+          console.error('Error resetting video:', e);
+        }
+      }
+    }
+
+    function verifyPosition($element) {
+      const currentTop = $element.offset().top;
+      if (Math.abs(window.pageYOffset - currentTop) > 2) {
+        gsap.to(window, {
+          duration: 0.5,
+          scrollTo: currentTop,
+          ease: 'expo.out',
+        });
+      }
+    }
+
+    function getElementRelativePosition($element) {
+      const rect = $element[0].getBoundingClientRect();
+      return {
+        top: rect.top,
+        left: rect.left,
+      };
     }
 
     return {
       init() {
         $('.js-accordion-item').on('click', function () {
+          // Prevent multiple clicks during animation
+          if (isAnimating) return;
           accordion.toggle($(this));
         });
       },
@@ -355,6 +384,9 @@ function initializeAccordion() {
         const accordionHeader = $clicked.find('.js-accordion-header')[0];
         const isOpening = !$clicked.hasClass('active');
         let resizeObserver;
+
+        // Set animating state
+        isAnimating = true;
 
         if (isOpening) {
           const $openItem = $('.js-accordion-item.active');
@@ -366,108 +398,12 @@ function initializeAccordion() {
             const closeTl = gsap.timeline({
               onComplete: () => {
                 const targetPosition = $clicked.offset().top;
-                const openTl = gsap.timeline();
-
-                openTl
-                  .add(() => scrollToTop($clicked), 'start')
-                  .add(() => {
-                    $clicked.addClass('active');
-                    gsap.set(accordionBody, {
-                      display: 'block',
-                      height: 0,
-                    });
-
-                    const openState = Flip.getState(accordionBody);
-                    gsap.set(accordionBody, { height: getViewportHeight() });
-
-                    // Initialize ResizeObserver for dynamic height updates
-                    resizeObserver = new ResizeObserver(() => {
-                      if ($clicked.hasClass('active')) {
-                        gsap.set(accordionBody, { height: getViewportHeight() });
-                      }
-                    });
-                    resizeObserver.observe(document.documentElement);
-
-                    // Animate padding alongside FLIP animation
-                    gsap.to(accordionHeader, {
-                      duration: settings.duration,
-                      paddingTop: 60,
-                      paddingBottom: 60,
-                      ease: settings.ease,
-                    });
-
-                    return Flip.from(openState, {
-                      duration: settings.duration,
-                      ease: settings.ease,
-                      absoluteOnLeave: true,
-                      onUpdate: function () {
-                        const currentTop = $clicked.offset().top;
-                        if (Math.abs(currentTop - targetPosition) > 2) {
-                          gsap.set(window, { scrollTo: targetPosition });
-                        }
-                      },
-                    });
-                  }, 'start+=0.1')
-                  .to(
-                    videoElement,
-                    {
-                      duration: settings.duration,
-                      opacity: 1,
-                      ease: 'power2.out',
-                      onStart: () => {
-                        videoElement.setAttribute('data-autoplay', 'true');
-                        window.dispatchEvent(new Event('resize'));
-                      },
-                    },
-                    'start+=0.2'
-                  );
-              },
-            });
-
-            closeTl
-              .to(
-                openVideo,
-                {
-                  duration: settings.duration / 2,
-                  opacity: 0,
-                  ease: 'power2.in',
+                const openTl = gsap.timeline({
                   onComplete: () => {
-                    openVideo.setAttribute('data-autoplay', 'false');
-                  },
-                },
-                'start'
-              )
-              .to(
-                openHeader,
-                {
-                  duration: settings.duration,
-                  paddingTop: '', // Back to original Webflow value
-                  paddingBottom: '', // Back to original Webflow value
-                  ease: settings.ease,
-                },
-                'start'
-              )
-              .add(() => {
-                const closeState = Flip.getState(openBody);
-                gsap.set(openBody, { height: 0 });
-
-                return Flip.from(closeState, {
-                  duration: settings.duration,
-                  ease: settings.ease,
-                  absoluteOnLeave: true,
-                  onComplete: () => {
-                    $openItem.removeClass('active');
-                    gsap.set(openBody, { display: 'none' });
+                    isAnimating = false;
                   },
                 });
-              }, 'start+=0.2');
-          } else {
-            const openTl = gsap.timeline();
-            const targetPosition = $clicked.offset().top;
 
-            openTl
-              .add(scrollToTop($clicked), 'start')
-              .add(() => {
                 $clicked.addClass('active');
                 gsap.set(accordionBody, {
                   display: 'block',
@@ -477,132 +413,231 @@ function initializeAccordion() {
                 const openState = Flip.getState(accordionBody);
                 gsap.set(accordionBody, { height: getViewportHeight() });
 
-                // Initialize ResizeObserver for dynamic height updates
-                resizeObserver = new ResizeObserver(() => {
-                  if ($clicked.hasClass('active')) {
-                    gsap.set(accordionBody, { height: getViewportHeight() });
-                  }
-                });
-                resizeObserver.observe(document.documentElement);
+                openTl
+                  .to(
+                    window,
+                    {
+                      scrollTo: {
+                        y: targetPosition,
+                        autoKill: false,
+                      },
+                      duration: settings.duration,
+                      ease: settings.ease,
+                    },
+                    0
+                  )
+                  .to(
+                    accordionHeader,
+                    {
+                      paddingTop: '5rem',
+                      duration: settings.duration,
+                      ease: settings.ease,
+                    },
+                    0
+                  )
+                  .add(
+                    Flip.from(openState, {
+                      duration: settings.duration,
+                      ease: settings.ease,
+                      absoluteOnLeave: true,
+                      onComplete: () => {
+                        resizeObserver = new ResizeObserver(() => {
+                          if ($clicked.hasClass('active')) {
+                            gsap.set(accordionBody, { height: getViewportHeight() });
+                            verifyPosition($clicked);
+                          }
+                        });
+                        resizeObserver.observe(document.documentElement);
+                        verifyPosition($clicked);
+                      },
+                    }),
+                    0
+                  );
+              },
+            });
 
-                // Animate padding for direct opens
-                gsap.to(accordionHeader, {
+            closeTl
+              .to(
+                openHeader,
+                {
                   duration: settings.duration,
-                  paddingTop: 60,
-                  paddingBottom: 60,
+                  paddingTop: '0.5rem',
                   ease: settings.ease,
-                });
-
-                return Flip.from(openState, {
+                },
+                'start'
+              )
+              .add(() => {
+                const closeState = Flip.getState(openBody);
+                gsap.set(openBody, { height: 0 });
+                return Flip.from(closeState, {
                   duration: settings.duration,
                   ease: settings.ease,
                   absoluteOnLeave: true,
-                  onUpdate: function () {
-                    const currentTop = $clicked.offset().top;
-                    if (Math.abs(currentTop - targetPosition) > 2) {
-                      gsap.set(window, { scrollTo: targetPosition });
+                  onComplete: () => {
+                    $openItem.removeClass('active');
+                    gsap.set(openBody, { display: 'none' });
+                    resetVideo(openVideo);
+                    if (openVideo) {
+                      openVideo.setAttribute('data-autoplay', 'false');
                     }
                   },
                 });
-              }, 'start')
+              }, 'start+=0.2');
+          } else {
+            const targetPosition = $clicked.offset().top;
+            const openTl = gsap.timeline({
+              onComplete: () => {
+                isAnimating = false;
+              },
+            });
+
+            $clicked.addClass('active');
+            gsap.set(accordionBody, {
+              display: 'block',
+              height: 0,
+            });
+
+            const openState = Flip.getState(accordionBody);
+            gsap.set(accordionBody, { height: getViewportHeight() });
+
+            openTl
               .to(
-                videoElement,
+                window,
                 {
-                  duration: settings.duration,
-                  opacity: 1,
-                  ease: 'power2.out',
-                  onStart: () => {
-                    videoElement.setAttribute('data-autoplay', 'true');
-                    window.dispatchEvent(new Event('resize'));
+                  scrollTo: {
+                    y: targetPosition,
+                    autoKill: false,
                   },
+                  duration: settings.duration,
+                  ease: settings.ease,
                 },
-                'start+=0.2'
+                0
+              )
+              .to(
+                accordionHeader,
+                {
+                  paddingTop: '5rem',
+                  duration: settings.duration,
+                  ease: settings.ease,
+                },
+                0
+              )
+              .add(
+                Flip.from(openState, {
+                  duration: settings.duration,
+                  ease: settings.ease,
+                  absoluteOnLeave: true,
+                  onComplete: () => {
+                    resizeObserver = new ResizeObserver(() => {
+                      if ($clicked.hasClass('active')) {
+                        gsap.set(accordionBody, { height: getViewportHeight() });
+                        verifyPosition($clicked);
+                      }
+                    });
+                    resizeObserver.observe(document.documentElement);
+                    verifyPosition($clicked);
+                  },
+                }),
+                0
               );
           }
-
-          // Cleanup function for ResizeObserver
-          const cleanup = () => {
-            if (resizeObserver) {
-              resizeObserver.disconnect();
-            }
-            $clicked.off('click', cleanup);
-          };
-
-          $clicked.on('click', cleanup);
         } else {
-          const closeTl = gsap.timeline();
+          const closeTl = gsap.timeline({
+            onComplete: () => {
+              isAnimating = false;
+            },
+          });
+
+          // Enhanced video handling before animation starts
+          if (videoElement) {
+            videoElement.setAttribute('data-autoplay', 'false');
+          }
 
           closeTl
-            .to(
-              videoElement,
-              {
-                duration: settings.duration / 2,
-                opacity: 0,
-                ease: 'power2.in',
-                onComplete: () => {
-                  videoElement.setAttribute('data-autoplay', 'false');
-                },
-              },
-              'start'
-            )
             .to(
               accordionHeader,
               {
                 duration: settings.duration,
-                paddingTop: '', // Back to original Webflow value
-                paddingBottom: '', // Back to original Webflow value
+                paddingTop: '0.5rem',
                 ease: settings.ease,
               },
               'start'
             )
-            .add(() => {
-              const closeState = Flip.getState(accordionBody);
-              gsap.set(accordionBody, { height: 0 });
-
-              return Flip.from(closeState, {
+            .to(
+              accordionBody,
+              {
+                height: 0,
                 duration: settings.duration,
                 ease: settings.ease,
-                absoluteOnLeave: true,
                 onComplete: () => {
                   $clicked.removeClass('active');
-                  gsap.set(accordionBody, { display: 'none' });
-                  // Cleanup ResizeObserver when closing
+                  gsap.set(accordionBody, {
+                    display: 'none',
+                    position: 'absolute',
+                  });
+                  resetVideo(videoElement);
                   if (resizeObserver) {
                     resizeObserver.disconnect();
                   }
                 },
-              });
-            }, 'start+=0.2');
+              },
+              'start'
+            );
         }
       },
     };
   })();
 
-  // Updated styles with mobile viewport support
   const style = document.createElement('style');
   style.textContent = `
     .js-accordion-item {
       background-color: transparent;
       transition: background-color 0.3s ease;
+      font-size: 0;
+      line-height: 0;
+      position: relative;
+      border-top: 0.5rem solid #fafafa;
+      overflow: hidden;
+    }
+    
+    .js-accordion-item > * {
+      font-size: 1rem;
+      line-height: normal;
     }
     
     .js-accordion-item:not(.active):hover {
-      background-color: #F3F2F0 !important;
+      background-color: #fafafa !important;
     }
     
     .js-accordion-item.active {
-      background-color: #000 !important;
+      background-color: #0F0F0F !important;
+      color: #fafafa !important;
+      border-top: none !important;
+    }
+    
+    .js-accordion-item.active + .js-accordion-item {
+      border-top: none !important;
     }
     
     .js-accordion-body {
-      height: 101vh;  /* Fallback for older browsers */
-      height: 101dvh; /* Modern browsers will use this */
+      height: calc(101vh + 1rem);
+      height: calc(101dvh + 1rem);
       width: 100%;
       margin: 0;
       padding: 0;
-      position: relative;
-      background-color: #000;
+      position: absolute;
+      background-color: #0F0F0F;
       display: none;
+      vertical-align: top;
+      line-height: 0;
+      top: 0;
+      left: 0;
+      will-change: height;
+      transform-origin: top;
+    }
+    
+    .js-accordion-body * {
+      line-height: 0;
     }
     
     .js-accordion-body .event-video {
@@ -611,18 +646,17 @@ function initializeAccordion() {
       left: 0;
       width: 100%;
       height: 100%;
+      margin: 0;
+      padding: 0;
       object-fit: cover;
+      display: block;
     }
   `;
   document.head.appendChild(style);
 
-  // Initialize GSAP plugins
   gsap.registerPlugin(Flip, ScrollToPlugin);
-
-  // Initialize accordion
   accordion.init();
 }
-
 // preloader
 document.addEventListener('DOMContentLoaded', () => {
   preloader.playPreloader().catch(console.error);
@@ -878,7 +912,7 @@ class InfiniteGrid {
     gsap.to(this, {
       zoom: nextZoom,
       duration: 0.5,
-      ease: 'power2.inOut',
+      ease: 'expo.inOut',
       onUpdate: () => {
         this.position.x = viewportCenter.x - zoomPointX * this.zoom;
         this.position.y = viewportCenter.y - zoomPointY * this.zoom;
