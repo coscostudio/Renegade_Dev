@@ -16,8 +16,7 @@ function createActiveLinkBackground() {
   Object.assign(activeLinkBackground.style, {
     position: 'absolute',
     top: '0',
-    background: 'rgba(163, 162, 160, 0.40)',
-    backdropFilter: 'blur(10px)',
+    background: '#424242',
     zIndex: '1',
     pointerEvents: 'none',
     willChange: 'transform',
