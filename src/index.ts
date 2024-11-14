@@ -328,7 +328,6 @@ function initializeAccordion() {
       ease: 'expo.inOut',
     };
 
-    // Add animation state tracking
     let isAnimating = false;
 
     function getViewportHeight() {
@@ -337,17 +336,8 @@ function initializeAccordion() {
 
     function resetVideo(videoElement) {
       if (videoElement && videoElement.tagName === 'VIDEO') {
-        try {
-          // Force video pause and reset
-          videoElement.pause();
-          // Reset time after a brief delay to ensure it takes
-          setTimeout(() => {
-            videoElement.currentTime = 0;
-            videoElement.setAttribute('data-autoplay', 'false');
-          }, 50);
-        } catch (e) {
-          console.error('Error resetting video:', e);
-        }
+        videoElement.pause();
+        videoElement.currentTime = 0;
       }
     }
 
@@ -373,7 +363,6 @@ function initializeAccordion() {
     return {
       init() {
         $('.js-accordion-item').on('click', function () {
-          // Prevent multiple clicks during animation
           if (isAnimating) return;
           accordion.toggle($(this));
         });
@@ -385,7 +374,6 @@ function initializeAccordion() {
         const isOpening = !$clicked.hasClass('active');
         let resizeObserver;
 
-        // Set animating state
         isAnimating = true;
 
         if (isOpening) {
@@ -475,11 +463,8 @@ function initializeAccordion() {
                   absoluteOnLeave: true,
                   onComplete: () => {
                     $openItem.removeClass('active');
-                    gsap.set(openBody, { display: 'none' });
+                    gsap.set(openBody, { clearProps: 'all', display: 'none' });
                     resetVideo(openVideo);
-                    if (openVideo) {
-                      openVideo.setAttribute('data-autoplay', 'false');
-                    }
                   },
                 });
               }, 'start+=0.2');
@@ -548,7 +533,6 @@ function initializeAccordion() {
             },
           });
 
-          // Enhanced video handling before animation starts
           if (videoElement) {
             videoElement.setAttribute('data-autoplay', 'false');
           }
@@ -572,8 +556,8 @@ function initializeAccordion() {
                 onComplete: () => {
                   $clicked.removeClass('active');
                   gsap.set(accordionBody, {
+                    clearProps: 'all',
                     display: 'none',
-                    position: 'absolute',
                   });
                   resetVideo(videoElement);
                   if (resizeObserver) {
@@ -591,6 +575,7 @@ function initializeAccordion() {
   const style = document.createElement('style');
   style.textContent = `
     .js-accordion-item {
+      min-height: 3rem;
       background-color: transparent;
       transition: background-color 0.3s ease;
       font-size: 0;
@@ -598,6 +583,12 @@ function initializeAccordion() {
       position: relative;
       border-top: 0.5rem solid #fafafa;
       overflow: hidden;
+    }
+    
+    @media (max-width: 768px) {
+      .js-accordion-item {
+        min-height: 5rem;
+      }
     }
     
     .js-accordion-item > * {
@@ -610,11 +601,18 @@ function initializeAccordion() {
     }
     
     .js-accordion-item.active {
+      min-height: 3rem;
       background-color: #0F0F0F !important;
       color: #fafafa !important;
       border-top: none !important;
     }
     
+    @media (max-width: 768px) {
+      .js-accordion-item.active {
+        min-height: 5rem;
+      }
+    }
+
     .js-accordion-item.active + .js-accordion-item {
       border-top: none !important;
     }
