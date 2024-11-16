@@ -1,12 +1,16 @@
 import barba from '@barba/core';
 import { restartWebflow } from '@finsweet/ts-utils';
 import { gsap } from 'gsap';
+import { Draggable } from 'gsap/Draggable';
 import { Flip } from 'gsap/Flip';
 import { ScrollToPlugin } from 'gsap/ScrollToPlugin';
+gsap.registerPlugin(Draggable);
+
+import { ArchiveView } from './components/WebGLGrid/ArchiveView';
 
 /// ----- Global Variables ----- //
-let activeLinkBackground;
-let observer;
+let activeLinkBackground: HTMLDivElement | null = null;
+const observer: MutationObserver | null = null;
 
 function createActiveLinkBackground() {
   activeLinkBackground = document.createElement('div');
@@ -660,291 +664,6 @@ document.addEventListener('DOMContentLoaded', () => {
   preloader.playPreloader().catch(console.error);
 });
 
-// --- Style Injection for Infinite Grid --- //
-function injectGridStyles() {
-  const style = document.createElement('style');
-  style.textContent = `
-    body.archive-page {
-      margin: 0;
-      overflow: hidden;
-    }
-    .grid {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      overflow: hidden;
-    }
-    .grid-wrapper {
-      transform-origin: center;
-      position: absolute;
-      will-change: transform;
-    }
-    .grid-clone {
-      position: absolute;
-      will-change: transform;
-    }
-    .js-plane {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      overflow: hidden;
-      user-select: none;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-    }
-    .js-plane img {
-      width: auto;
-      height: auto;
-      max-width: 100%;
-      max-height: 100%;
-      object-fit: contain;
-      object-position: center top;
-      pointer-events: none;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-user-drag: none;
-    }
-  `;
-  document.head.appendChild(style);
-}
-
-// --- Infinite Grid Class --- //
-class InfiniteGrid {
-  private GRID_WIDTH = 3000;
-  private GRID_HEIGHT = 3300;
-  private position = { x: 0, y: 0 };
-  private velocity = { x: 0, y: 0 };
-  private zoom = 1;
-  private isDragging = false;
-  private lastPosition = { x: 0, y: 0 };
-  private container: HTMLElement;
-  private wrapper: HTMLElement;
-
-  constructor() {
-    const gridElement = document.querySelector('.js-grid');
-    if (!gridElement) return;
-    this.container = gridElement as HTMLElement;
-    this.initialize();
-  }
-
-  private initialize() {
-    const originalContent = this.container.innerHTML;
-
-    this.container.style.width = '100vw';
-    this.container.style.height = '100vh';
-    this.container.style.overflow = 'hidden';
-    this.container.style.position = 'fixed';
-
-    this.wrapper = document.createElement('div');
-    this.wrapper.className = 'grid-wrapper';
-    this.container.innerHTML = '';
-    this.container.appendChild(this.wrapper);
-
-    // Create grid area
-    for (let y = -2; y <= 2; y++) {
-      for (let x = -2; x <= 2; x++) {
-        const clone = document.createElement('div');
-        clone.className = 'grid-clone';
-        clone.innerHTML = originalContent;
-        clone.style.position = 'absolute';
-        clone.style.width = `${this.GRID_WIDTH}px`;
-        clone.style.height = `${this.GRID_HEIGHT}px`;
-        clone.style.transform = `translate(${x * this.GRID_WIDTH}px, ${y * this.GRID_HEIGHT}px)`;
-        clone.style.display = 'grid';
-        clone.style.gridTemplateColumns = 'repeat(10, 1fr)';
-        clone.style.gridTemplateRows = 'repeat(11, 1fr)';
-        clone.style.gap = '40px';
-        clone.style.padding = '40px';
-
-        this.wrapper.appendChild(clone);
-      }
-    }
-
-    this.setupImages();
-    this.centerGrid();
-    this.addEventListeners();
-    this.animate();
-  }
-
-  private setupImages(): void {
-    document.querySelectorAll('.js-plane').forEach((figure) => {
-      if (!figure.querySelector('img')) {
-        const figureElement = figure as HTMLElement;
-        const img = document.createElement('img');
-        img.src = figureElement.dataset.src || '';
-        img.style.width = 'auto';
-        img.style.height = 'auto';
-        img.style.maxWidth = '100%';
-        img.style.maxHeight = '100%';
-        img.draggable = false;
-        figure.appendChild(img);
-      }
-    });
-  }
-
-  private centerGrid(): void {
-    const viewportCenter = {
-      x: window.innerWidth / 2,
-      y: window.innerHeight / 2,
-    };
-
-    this.position.x = viewportCenter.x - this.GRID_WIDTH / 2;
-    this.position.y = viewportCenter.y - this.GRID_HEIGHT / 2;
-  }
-
-  private addEventListeners(): void {
-    this.container.addEventListener('mousedown', this.onMouseDown.bind(this));
-    window.addEventListener('mousemove', this.onMouseMove.bind(this));
-    window.addEventListener('mouseup', this.onMouseUp.bind(this));
-
-    this.container.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
-
-    this.container.addEventListener('touchstart', this.onTouchStart.bind(this), { passive: false });
-    this.container.addEventListener('touchmove', this.onTouchMove.bind(this), { passive: false });
-    this.container.addEventListener('touchend', this.onTouchEnd.bind(this));
-
-    const zoomInButton = document.getElementById('zoomIn');
-    const zoomOutButton = document.getElementById('zoomOut');
-    if (zoomInButton) zoomInButton.addEventListener('click', () => this.adjustZoom(0.1));
-    if (zoomOutButton) zoomOutButton.addEventListener('click', () => this.adjustZoom(-0.1));
-  }
-
-  private onMouseDown(e: MouseEvent): void {
-    e.preventDefault();
-    this.isDragging = true;
-    this.lastPosition = {
-      x: e.clientX - this.position.x,
-      y: e.clientY - this.position.y,
-    };
-    this.velocity = { x: 0, y: 0 };
-  }
-
-  private onMouseMove(e: MouseEvent): void {
-    if (!this.isDragging) return;
-
-    const newX = e.clientX - this.lastPosition.x;
-    const newY = e.clientY - this.lastPosition.y;
-
-    this.velocity.x = (newX - this.position.x) * 0.1;
-    this.velocity.y = (newY - this.position.y) * 0.1;
-
-    this.position.x = newX;
-    this.position.y = newY;
-
-    this.wrapPosition();
-  }
-
-  private onMouseUp(): void {
-    this.isDragging = false;
-  }
-
-  private onWheel(e: WheelEvent): void {
-    e.preventDefault();
-
-    if (e.ctrlKey) {
-      this.adjustZoom(-e.deltaY * 0.001);
-    } else {
-      this.velocity.x -= e.deltaX * 0.5;
-      this.velocity.y -= e.deltaY * 0.5;
-    }
-  }
-
-  private onTouchStart(e: TouchEvent): void {
-    e.preventDefault();
-    this.isDragging = true;
-    this.lastPosition = {
-      x: e.touches[0].clientX - this.position.x,
-      y: e.touches[0].clientY - this.position.y,
-    };
-    this.velocity = { x: 0, y: 0 };
-  }
-
-  private onTouchMove(e: TouchEvent): void {
-    if (!this.isDragging) return;
-    e.preventDefault();
-
-    const newX = e.touches[0].clientX - this.lastPosition.x;
-    const newY = e.touches[0].clientY - this.lastPosition.y;
-
-    this.velocity.x = (newX - this.position.x) * 0.1;
-    this.velocity.y = (newY - this.position.y) * 0.1;
-
-    this.position.x = newX;
-    this.position.y = newY;
-
-    this.wrapPosition();
-  }
-
-  private onTouchEnd(): void {
-    this.isDragging = false;
-  }
-
-  private adjustZoom(delta: number): void {
-    const zoomLevels = [0.5, 0.75, 1, 1.5, 2];
-    const currentZoom = this.zoom;
-
-    let nextZoom: number;
-    if (delta > 0) {
-      nextZoom = zoomLevels.find((zoom) => zoom > currentZoom) || zoomLevels[zoomLevels.length - 1];
-    } else {
-      nextZoom =
-        zoomLevels
-          .slice()
-          .reverse()
-          .find((zoom) => zoom < currentZoom) || zoomLevels[0];
-    }
-
-    const viewportCenter = {
-      x: window.innerWidth / 2,
-      y: window.innerHeight / 2,
-    };
-
-    const zoomPointX = (viewportCenter.x - this.position.x) / this.zoom;
-    const zoomPointY = (viewportCenter.y - this.position.y) / this.zoom;
-
-    gsap.to(this, {
-      zoom: nextZoom,
-      duration: 0.5,
-      ease: 'expo.inOut',
-      onUpdate: () => {
-        this.position.x = viewportCenter.x - zoomPointX * this.zoom;
-        this.position.y = viewportCenter.y - zoomPointY * this.zoom;
-        this.wrapPosition();
-      },
-    });
-  }
-
-  private wrapPosition(): void {
-    const effectiveWidth = this.GRID_WIDTH * this.zoom;
-    const effectiveHeight = this.GRID_HEIGHT * this.zoom;
-
-    this.position.x = ((this.position.x % this.GRID_WIDTH) + this.GRID_WIDTH) % this.GRID_WIDTH;
-    this.position.y = ((this.position.y % this.GRID_HEIGHT) + this.GRID_HEIGHT) % this.GRID_HEIGHT;
-  }
-
-  private animate(): void {
-    if (!this.isDragging) {
-      this.velocity.x *= 0.95;
-      this.velocity.y *= 0.95;
-
-      this.position.x += this.velocity.x;
-      this.position.y += this.velocity.y;
-
-      this.wrapPosition();
-    }
-
-    const transform = `translate(${this.position.x}px, ${this.position.y}px) scale(${this.zoom})`;
-    this.wrapper.style.transform = transform;
-
-    requestAnimationFrame(this.animate.bind(this));
-  }
-}
-
 // Barba initialization
 barba.init({
   debug: true,
@@ -1011,17 +730,43 @@ barba.init({
       },
     },
     {
-      namespace: 'archive',
-      beforeEnter() {
-        injectGridStyles();
-        document.body.classList.add('archive-page');
-      },
+      namespace: 'index',
       afterEnter() {
         restartWebflow();
         loadAutoVideo();
-        new InfiniteGrid();
+        initializeAccordion();
+      },
+    },
+    {
+      namespace: 'info',
+      afterEnter() {
+        restartWebflow();
+        loadAutoVideo();
+      },
+    },
+    {
+      namespace: 'archive',
+      beforeEnter() {
+        document.body.classList.add('archive-page');
+      },
+      async afterEnter(data) {
+        try {
+          const archiveView = new ArchiveView(data.next.container);
+          await archiveView.init(); // Wait for initialization
+          (window as any).archiveView = archiveView;
+          archiveView.show(); // Now safe to show
+        } catch (error) {
+          console.error('Error initializing archive view:', error);
+        }
+
+        restartWebflow();
+        loadAutoVideo();
       },
       beforeLeave() {
+        if ((window as any).archiveView) {
+          (window as any).archiveView.destroy();
+          delete (window as any).archiveView;
+        }
         document.body.classList.remove('archive-page');
       },
     },
@@ -1052,9 +797,6 @@ document.addEventListener('DOMContentLoaded', () => {
   loadAutoVideo();
   preloader.playPreloader().catch(console.error);
 });
-
-// Handle resize
-window.addEventListener('resize', () => {});
 
 function loadAutoVideo() {
   const script = document.createElement('script');
