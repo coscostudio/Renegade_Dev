@@ -48,3 +48,12 @@ export interface WebGLBuffers {
   position: WebGLBuffer;
   texCoord: WebGLBuffer;
 }
+
+export interface BoundEvents {
+  mouseDown: (e: MouseEvent) => void;
+  mouseMove: (e: MouseEvent) => void;
+  mouseUp: (e: MouseEvent) => void;
+  touchStart: (e: TouchEvent) => void;
+  touchMove: (e: TouchEvent) => void;
+  touchEnd: (e: TouchEvent) => void;
+}

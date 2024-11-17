@@ -70,14 +70,15 @@ export class ArchiveView {
   }
 
   private handleZoom(factor: number): void {
-    if (!this.grid || !this.canvas) {
-      console.log('Grid or canvas not initialized');
-      return;
-    }
+    if (!this.grid || !this.canvas) return;
 
     const rect = this.canvas.getBoundingClientRect();
-    console.log('Zooming with factor:', factor);
-    this.grid.setZoom(factor, rect.width / 2, rect.height / 2);
+    const center = {
+      x: rect.width / 2,
+      y: rect.height / 2,
+    };
+
+    this.grid.setZoom(factor, center.x, center.y);
   }
 
   public async init(): Promise<void> {
