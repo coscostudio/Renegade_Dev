@@ -1,4 +1,3 @@
-// Types for the WebGL Grid
 export interface GridOptions {
   images: string[];
   pixelRatio?: number;
@@ -11,6 +10,7 @@ export interface ImageInfo {
   element: HTMLImageElement;
   width: number;
   height: number;
+  color: string;
 }
 
 export interface GridItem {
@@ -40,7 +40,7 @@ export interface WebGLLocations {
   position: number;
   texCoord: number;
   matrix: WebGLUniformLocation;
-  image: WebGLUniformLocation;
+  texture: WebGLUniformLocation;
   opacity: WebGLUniformLocation;
 }
 

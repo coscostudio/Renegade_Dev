@@ -751,16 +751,24 @@ barba.init({
       },
       async afterEnter(data) {
         try {
-          const archiveView = new ArchiveView(data.next.container);
-          await archiveView.init(); // Wait for initialization
-          (window as any).archiveView = archiveView;
-          archiveView.show(); // Now safe to show
-        } catch (error) {
-          console.error('Error initializing archive view:', error);
-        }
+          // Ensure container is ready
+          await new Promise((resolve) => setTimeout(resolve, 100));
 
-        restartWebflow();
-        loadAutoVideo();
+          console.log('Creating archive view with container:', data.next.container);
+          const archiveView = new ArchiveView(data.next.container);
+
+          // Initialize
+          await archiveView.init();
+          console.log('Archive view initialized');
+
+          // Store instance
+          (window as any).archiveView = archiveView;
+
+          // Show the view
+          archiveView.show();
+        } catch (error) {
+          console.error('Error in archive view:', error);
+        }
       },
       beforeLeave() {
         if ((window as any).archiveView) {
