@@ -20,6 +20,9 @@ export class ArchiveView {
   }
 
   private createZoomUI(): void {
+    const archiveContainer = this.container.querySelector('.archive-container');
+    if (!archiveContainer) return;
+
     this.zoomUI = document.createElement('div');
     this.zoomUI.className = 'archive-zoom';
 
@@ -43,22 +46,10 @@ export class ArchiveView {
 
     this.zoomUI.appendChild(zoomOutBtn);
     this.zoomUI.appendChild(zoomInBtn);
-    this.container.appendChild(this.zoomUI);
+    archiveContainer.appendChild(this.zoomUI); // Append to archiveContainer instead of container
 
     zoomOutBtn.addEventListener('click', () => this.handleZoom(0.8));
     zoomInBtn.addEventListener('click', () => this.handleZoom(1.2));
-
-    // Initial position
-    this.updateZoomPosition();
-
-    // Handle viewport changes
-    window.addEventListener('resize', this.debounce(this.updateZoomPosition.bind(this), 100));
-    window.addEventListener('scroll', this.debounce(this.updateZoomPosition.bind(this), 100));
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) {
-        setTimeout(() => this.updateZoomPosition(), 300);
-      }
-    });
   }
 
   private setupStyles(): void {
@@ -69,11 +60,13 @@ export class ArchiveView {
         top: 0;
         left: 0;
         width: 100vw;
-        height: 100vh;
+        height: 100dvh; /* Use dynamic viewport height */
         overflow: hidden;
         background: #000;
+        display: flex; /* Add flex to help with positioning */
+        flex-direction: column;
       }
-
+  
       .archive-canvas {
         position: absolute;
         top: 0;
@@ -83,21 +76,21 @@ export class ArchiveView {
         display: block;
         cursor: grab;
       }
-
+  
       .archive-canvas:active {
         cursor: grabbing;
       }
-
+  
       .archive-zoom {
-        display: flex;
-        gap: 0.5rem;
-        position: fixed;
+        position: absolute; /* Changed to absolute */
         left: 50%;
         transform: translateX(-50%);
         z-index: 100;
-        bottom: calc(2rem + env(safe-area-inset-bottom));
+        bottom: 2rem;
+        display: flex;
+        gap: 0.5rem;
       }
-
+  
       .zoom-button {
         width: 2.5rem;
         height: 2.5rem;
@@ -111,21 +104,24 @@ export class ArchiveView {
         color: white;
         border: none;
       }
-
+  
       @media (max-width: 1024px) {
         .zoom-button {
           width: 2.75rem;
           height: 2.75rem;
         }
       }
-
+  
       @media (max-width: 768px) {
         .zoom-button {
           width: 3rem;
           height: 3rem;
         }
+        .archive-zoom {
+          bottom: max(2rem, 5vh);
+        }
       }
-
+  
       @media (max-width: 479px) {
         .zoom-button {
           width: 3.25rem;
@@ -179,6 +175,9 @@ export class ArchiveView {
       this.canvas = document.createElement('canvas');
       this.canvas.className = 'archive-canvas';
       archiveContainer.appendChild(this.canvas);
+
+      // Create zoom UI after container is ready
+      this.createZoomUI();
 
       const isMobile = window.innerWidth <= 768;
       this.grid = new WebGLGrid(this.canvas);
