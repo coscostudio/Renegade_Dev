@@ -748,34 +748,34 @@ barba.init({
       namespace: 'archive',
       beforeEnter() {
         document.body.classList.add('archive-page');
+        const zoomUI = document.querySelector('.archive-zoom');
+        if (zoomUI) {
+          gsap.set(zoomUI, {
+            bottom: window.innerHeight * 0.05,
+            autoAlpha: 0,
+          });
+        }
       },
       async afterEnter(data) {
         try {
-          // Ensure container is ready
           await new Promise((resolve) => setTimeout(resolve, 100));
-
-          console.log('Creating archive view with container:', data.next.container);
           const archiveView = new ArchiveView(data.next.container);
-
-          // Initialize
           await archiveView.init();
-          console.log('Archive view initialized');
-
-          // Store instance
           (window as any).archiveView = archiveView;
 
-          // Show the view
+          const zoomUI = document.querySelector('.archive-zoom');
+          if (zoomUI) {
+            gsap.to(zoomUI, {
+              autoAlpha: 1,
+              duration: 0.5,
+              delay: 0.3,
+            });
+          }
+
           archiveView.show();
         } catch (error) {
           console.error('Error in archive view:', error);
         }
-      },
-      beforeLeave() {
-        if ((window as any).archiveView) {
-          (window as any).archiveView.destroy();
-          delete (window as any).archiveView;
-        }
-        document.body.classList.remove('archive-page');
       },
     },
   ],
