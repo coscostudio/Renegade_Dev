@@ -8,16 +8,57 @@ export class ArchiveView {
   private grid: WebGLGrid | null = null;
   private images: string[] = [];
   private resizeObserver: ResizeObserver | null = null;
+  private zoomUI: HTMLElement | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
-
     const imageElements = Array.from(container.querySelectorAll('.cms-image'));
     this.images = imageElements.map((img) => (img as HTMLImageElement).src);
 
     this.setupStyles();
-    this.bindExternalControls();
-    this.setupZoomUI();
+    this.createZoomUI();
+  }
+
+  private createZoomUI(): void {
+    this.zoomUI = document.createElement('div');
+    this.zoomUI.className = 'archive-zoom';
+
+    const zoomOutBtn = document.createElement('button');
+    zoomOutBtn.className = 'zoom-button';
+    zoomOutBtn.setAttribute('data-zoom', 'out');
+    zoomOutBtn.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" fill="none">
+        <path d="M1 9H17" stroke="currentColor" stroke-width="1.62" stroke-linecap="square" stroke-linejoin="round"/>
+      </svg>
+    `;
+
+    const zoomInBtn = document.createElement('button');
+    zoomInBtn.className = 'zoom-button';
+    zoomInBtn.setAttribute('data-zoom', 'in');
+    zoomInBtn.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" fill="none">
+        <path d="M8.99994 1.43945V16.5595M1.43994 8.99945H16.5599" stroke="currentColor" stroke-width="1.62" stroke-linecap="square" stroke-linejoin="round"/>
+      </svg>
+    `;
+
+    this.zoomUI.appendChild(zoomOutBtn);
+    this.zoomUI.appendChild(zoomInBtn);
+    this.container.appendChild(this.zoomUI);
+
+    zoomOutBtn.addEventListener('click', () => this.handleZoom(0.8));
+    zoomInBtn.addEventListener('click', () => this.handleZoom(1.2));
+
+    // Initial position
+    this.updateZoomPosition();
+
+    // Handle viewport changes
+    window.addEventListener('resize', this.debounce(this.updateZoomPosition.bind(this), 100));
+    window.addEventListener('scroll', this.debounce(this.updateZoomPosition.bind(this), 100));
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        setTimeout(() => this.updateZoomPosition(), 300);
+      }
+    });
   }
 
   private setupStyles(): void {
@@ -46,28 +87,54 @@ export class ArchiveView {
       .archive-canvas:active {
         cursor: grabbing;
       }
+
+      .archive-zoom {
+        display: flex;
+        gap: 0.5rem;
+        position: fixed;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 100;
+        bottom: calc(2rem + env(safe-area-inset-bottom));
+      }
+
+      .zoom-button {
+        width: 2.5rem;
+        height: 2.5rem;
+        padding: 0.5rem;
+        background-color: #424242;
+        cursor: pointer;
+        transition: background-color 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        border: none;
+      }
+
+      @media (max-width: 1024px) {
+        .zoom-button {
+          width: 2.75rem;
+          height: 2.75rem;
+        }
+      }
+
+      @media (max-width: 768px) {
+        .zoom-button {
+          width: 3rem;
+          height: 3rem;
+        }
+      }
+
+      @media (max-width: 479px) {
+        .zoom-button {
+          width: 3.25rem;
+          height: 3.25rem;
+        }
+      }
     `;
 
     document.head.appendChild(style);
-  }
-
-  private bindExternalControls(): void {
-    const zoomInButton = this.container.querySelector('[data-zoom="in"]');
-    const zoomOutButton = this.container.querySelector('[data-zoom="out"]');
-
-    if (zoomInButton) {
-      zoomInButton.addEventListener('click', () => {
-        console.log('Zoom in clicked');
-        this.handleZoom(1.2);
-      });
-    }
-
-    if (zoomOutButton) {
-      zoomOutButton.addEventListener('click', () => {
-        console.log('Zoom out clicked');
-        this.handleZoom(0.8);
-      });
-    }
   }
 
   private handleZoom(factor: number): void {
@@ -80,6 +147,24 @@ export class ArchiveView {
     };
 
     this.grid.setZoom(factor, center.x, center.y);
+  }
+
+  private updateZoomPosition(): void {
+    if (!this.zoomUI) return;
+
+    const viewportHeight = window.innerHeight;
+    const bottomPadding = Math.max(32, viewportHeight * 0.05);
+    const safeAreaInset = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--sat') || '0'
+    );
+
+    gsap.set(this.zoomUI, {
+      bottom: bottomPadding + safeAreaInset,
+      left: '50%',
+      xPercent: -50,
+      position: 'fixed',
+      zIndex: 100,
+    });
   }
 
   public async init(): Promise<void> {
@@ -105,7 +190,7 @@ export class ArchiveView {
         pixelRatio: window.devicePixelRatio,
       });
 
-      this.resizeObserver = new ResizeObserver(this.debounce(this.handleResize, 150));
+      this.resizeObserver = new ResizeObserver(this.debounce(this.handleResize.bind(this), 150));
       this.resizeObserver.observe(this.canvas);
     } catch (error) {
       console.error('Failed to initialize grid:', error);
@@ -115,7 +200,6 @@ export class ArchiveView {
 
   private handleResize = (): void => {
     if (!this.canvas || !this.grid) return;
-
     const rect = this.canvas.parentElement!.getBoundingClientRect();
     this.grid.resize(rect.width, rect.height);
   };
@@ -134,13 +218,27 @@ export class ArchiveView {
       return;
     }
 
-    gsap.set(this.canvas, { autoAlpha: 0 });
+    gsap.set([this.canvas, this.zoomUI], { autoAlpha: 0 });
     this.grid.start();
 
-    gsap.to(this.canvas, {
+    gsap.to([this.canvas, this.zoomUI], {
       autoAlpha: 1,
       duration: 1,
       ease: 'expo.out',
+      stagger: 0.2,
+    });
+  }
+
+  public fadeOut(): Promise<void> {
+    return new Promise((resolve) => {
+      if (!this.canvas && !this.zoomUI) return resolve();
+
+      gsap.to([this.canvas, this.zoomUI], {
+        autoAlpha: 0,
+        duration: 0.5,
+        ease: 'expo.out',
+        onComplete: resolve,
+      });
     });
   }
 
@@ -160,48 +258,12 @@ export class ArchiveView {
       this.canvas = null;
     }
 
+    if (this.zoomUI) {
+      this.zoomUI.remove();
+      this.zoomUI = null;
+    }
+
     const style = document.querySelector('style[data-archive-styles]');
     if (style) style.remove();
-  }
-
-  private setupZoomUI(): void {
-    const zoomUI = this.container.querySelector('.archive-zoom');
-    if (!zoomUI) return;
-
-    // Initial position
-    this.updateZoomPosition();
-
-    // Handle viewport changes
-    let timeoutId: NodeJS.Timeout;
-    const handleResize = () => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        this.updateZoomPosition();
-      }, 100);
-    };
-
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('scroll', handleResize);
-
-    // Handle visibility changes (for mobile browsers)
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) {
-        setTimeout(this.updateZoomPosition, 300);
-      }
-    });
-  }
-
-  private updateZoomPosition(): void {
-    const zoomUI = this.container.querySelector('.archive-zoom');
-    if (!zoomUI) return;
-
-    const viewportHeight = window.innerHeight;
-    const bottomOffset = Math.max(32, viewportHeight * 0.05);
-
-    gsap.to(zoomUI, {
-      bottom: bottomOffset,
-      duration: 0.3,
-      ease: 'power2.out',
-    });
   }
 }

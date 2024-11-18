@@ -675,9 +675,13 @@ barba.init({
       beforeLeave() {
         blockClicks();
       },
-      leave(data) {
+      async leave(data) {
         const direction = getSlideDirection(data.current.namespace, data.next.namespace);
         const tl = gsap.timeline();
+
+        if (data.current.namespace === 'archive' && (window as any).archiveView) {
+          await (window as any).archiveView.fadeOut();
+        }
 
         tl.to(
           data.current.container,
@@ -693,7 +697,6 @@ barba.init({
       },
       enter(data) {
         const direction = getSlideDirection(data.current.namespace, data.next.namespace);
-
         gsap.set(data.next.container, {
           x: direction === 'right' ? '100%' : '-100%',
         });
@@ -730,28 +733,17 @@ barba.init({
       },
     },
     {
-      namespace: 'index',
-      afterEnter() {
-        restartWebflow();
-        loadAutoVideo();
-        initializeAccordion();
-      },
-    },
-    {
-      namespace: 'info',
-      afterEnter() {
-        restartWebflow();
-        loadAutoVideo();
-      },
-    },
-    {
       namespace: 'archive',
       beforeEnter() {
         document.body.classList.add('archive-page');
         const zoomUI = document.querySelector('.archive-zoom');
         if (zoomUI) {
           gsap.set(zoomUI, {
-            bottom: window.innerHeight * 0.05,
+            position: 'fixed',
+            bottom: Math.max(32, window.innerHeight * 0.05),
+            left: '50%',
+            xPercent: -50,
+            zIndex: 100,
             autoAlpha: 0,
           });
         }
@@ -759,8 +751,13 @@ barba.init({
       async afterEnter(data) {
         try {
           await new Promise((resolve) => setTimeout(resolve, 100));
+
+          console.log('Creating archive view with container:', data.next.container);
           const archiveView = new ArchiveView(data.next.container);
+
           await archiveView.init();
+          console.log('Archive view initialized');
+
           (window as any).archiveView = archiveView;
 
           const zoomUI = document.querySelector('.archive-zoom');
@@ -776,6 +773,13 @@ barba.init({
         } catch (error) {
           console.error('Error in archive view:', error);
         }
+      },
+      beforeLeave() {
+        if ((window as any).archiveView) {
+          (window as any).archiveView.destroy();
+          delete (window as any).archiveView;
+        }
+        document.body.classList.remove('archive-page');
       },
     },
   ],
