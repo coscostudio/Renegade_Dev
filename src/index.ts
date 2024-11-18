@@ -672,17 +672,21 @@ barba.init({
     {
       name: 'slide-transition',
       sync: true,
+
       beforeLeave() {
         blockClicks();
       },
+
       async leave(data) {
         const direction = getSlideDirection(data.current.namespace, data.next.namespace);
         const tl = gsap.timeline();
 
+        // Handle archive view fadeout if needed
         if (data.current.namespace === 'archive' && (window as any).archiveView) {
           await (window as any).archiveView.fadeOut();
         }
 
+        // Slide out current page
         tl.to(
           data.current.container,
           {
@@ -695,27 +699,29 @@ barba.init({
 
         return tl;
       },
+
       enter(data) {
         const direction = getSlideDirection(data.current.namespace, data.next.namespace);
+
+        // Set initial position for incoming page
         gsap.set(data.next.container, {
           x: direction === 'right' ? '100%' : '-100%',
         });
 
+        // Ensure visibility
         data.next.container.style.visibility = 'visible';
 
-        const tl = gsap.to(data.next.container, {
+        // Animate in new page
+        return gsap.to(data.next.container, {
           x: 0,
           duration: 1.5,
           ease: 'expo.inOut',
-          onComplete: () => {
-            unblockClicks();
-          },
+          onComplete: unblockClicks,
         });
-
-        return tl;
       },
     },
   ],
+
   views: [
     {
       namespace: 'index',
@@ -736,44 +742,48 @@ barba.init({
       namespace: 'archive',
       beforeEnter() {
         document.body.classList.add('archive-page');
-        const zoomUI = document.querySelector('.archive-zoom');
-        if (zoomUI) {
-          gsap.set(zoomUI, {
-            position: 'fixed',
-            bottom: Math.max(32, window.innerHeight * 0.05),
-            left: '50%',
-            xPercent: -50,
-            zIndex: 100,
-            autoAlpha: 0,
-          });
-        }
+
+        // Add initial styles to prevent flash
+        const style = document.createElement('style');
+        style.id = 'archive-init-styles';
+        style.textContent = `
+          .archive-container, 
+          .archive-canvas,
+          .archive-zoom {
+            opacity: 0 !important;
+            visibility: hidden !important;
+          }
+        `;
+        document.head.appendChild(style);
       },
+
       async afterEnter(data) {
         try {
+          // Ensure container is hidden during setup
+          gsap.set(data.next.container, { autoAlpha: 0 });
+
+          // Small delay to ensure DOM is ready
           await new Promise((resolve) => setTimeout(resolve, 100));
 
-          console.log('Creating archive view with container:', data.next.container);
+          // Initialize archive view
           const archiveView = new ArchiveView(data.next.container);
-
           await archiveView.init();
-          console.log('Archive view initialized');
 
+          // Store reference globally
           (window as any).archiveView = archiveView;
 
-          const zoomUI = document.querySelector('.archive-zoom');
-          if (zoomUI) {
-            gsap.to(zoomUI, {
-              autoAlpha: 1,
-              duration: 0.5,
-              delay: 0.3,
-            });
-          }
+          // Remove initial hiding styles
+          const initStyles = document.getElementById('archive-init-styles');
+          if (initStyles) initStyles.remove();
 
+          // Show content with smooth fade
+          gsap.set(data.next.container, { autoAlpha: 1 });
           archiveView.show();
         } catch (error) {
-          console.error('Error in archive view:', error);
+          console.error('Error initializing archive view:', error);
         }
       },
+
       beforeLeave() {
         if ((window as any).archiveView) {
           (window as any).archiveView.destroy();
@@ -785,7 +795,13 @@ barba.init({
   ],
 });
 
-// --- Barba Hooks --- //
+// Barba Hooks
+barba.hooks.before(() => {
+  if ((window as any).archiveView) {
+    (window as any).archiveView.isTransitioning = true;
+  }
+});
+
 barba.hooks.enter(() => {
   window.scrollTo(0, 0);
   const preloader = document.querySelector('.loader_wrapper');
@@ -795,9 +811,17 @@ barba.hooks.enter(() => {
 });
 
 barba.hooks.after(async ({ next }) => {
+  // Handle scroll restoration
   if ('scrollRestoration' in history) {
     history.scrollRestoration = 'manual';
   }
+
+  // Update archive view state
+  if ((window as any).archiveView) {
+    (window as any).archiveView.isTransitioning = false;
+  }
+
+  // Restart Webflow and wait for completion
   restartWebflow();
   await new Promise((resolve) => setTimeout(resolve, 100));
 });
@@ -810,9 +834,13 @@ document.addEventListener('DOMContentLoaded', () => {
   preloader.playPreloader().catch(console.error);
 });
 
-function loadAutoVideo() {
+// Utility function to load auto video script
+function loadAutoVideo(): void {
   const script = document.createElement('script');
   script.src = 'https://cdn.jsdelivr.net/npm/@finsweet/attributes-autovideo@1/autovideo.js';
   script.defer = true;
   document.body.appendChild(script);
 }
+
+// Export necessary functions if needed
+export { blockClicks, createClickBlocker, loadAutoVideo, unblockClicks };
