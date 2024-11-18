@@ -33,6 +33,8 @@ export class WebGLGrid {
   private minScale = 0.7;
   private maxImageWidth = 0.6;
   private boundEvents: BoundEvents;
+  private lastFrameItems: Map<string, GridItem> = new Map();
+  private frameCount = 0;
 
   private viewTransform = {
     scale: 1,
@@ -145,6 +147,7 @@ export class WebGLGrid {
   private setupWebGL(): void {
     const { gl } = this;
 
+    // Create and compile shaders
     const vertShader = this.createShader(this.vertexShader, gl.VERTEX_SHADER);
     const fragShader = this.createShader(this.fragmentShader, gl.FRAGMENT_SHADER);
     this.program = this.createProgram(vertShader, fragShader);
@@ -171,8 +174,15 @@ export class WebGLGrid {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoord);
     gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
 
+    // Updated WebGL configuration
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+
+    // Set clear color with alpha
+    gl.clearColor(0, 0, 0, 0);
   }
 
   private createShader(source: string, type: number): WebGLShader {
@@ -326,8 +336,17 @@ export class WebGLGrid {
     const { gl } = this;
     const texture = gl.createTexture();
 
+    // Ensure we're working with power-of-two dimensions
+    const canvas = document.createElement('canvas');
+    const size = Math.pow(2, Math.ceil(Math.log2(Math.max(image.width, image.height))));
+    canvas.width = size;
+    canvas.height = size;
+
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(image, 0, 0, image.width, image.height, 0, 0, size, size);
+
     gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
 
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -424,42 +443,45 @@ export class WebGLGrid {
 
   private updateGridPositions(): void {
     const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
-
-    // Adjust buffer based on zoom level
     const viewScale = this.viewTransform.scale;
-    const bufferFactor = viewScale > 4 ? 1.2 : 1.5; // Reduce buffer at high zoom
 
-    const viewportWidth = (canvasWidth / viewScale) * bufferFactor;
-    const viewportHeight = (canvasHeight / viewScale) * bufferFactor;
+    // Increase buffer zone for better item retention
+    const bufferFactor = Math.max(1.5, viewScale > 4 ? 2 : 1.5);
+    const visibleWidth = (canvasWidth / viewScale) * bufferFactor;
+    const visibleHeight = (canvasHeight / viewScale) * bufferFactor;
 
-    // Calculate world space center of viewport
+    // Calculate world space center
     const worldCenterX = -this.viewTransform.x / viewScale + canvasWidth / 2 / viewScale;
     const worldCenterY = -this.viewTransform.y / viewScale + canvasHeight / 2 / viewScale;
 
-    // Optimization: Only update visible and near-visible items
+    // Track which items we've wrapped to prevent double-wrapping
+    const wrappedItems = new Set<GridItem>();
+
     this.gridItems.forEach((item) => {
+      if (wrappedItems.has(item)) return;
+
       const relativeX = item.x - worldCenterX;
       const relativeY = item.y - worldCenterY;
 
-      // Calculate distance from viewport center
-      const distanceFromCenter = Math.sqrt(relativeX * relativeX + relativeY * relativeY);
-      const isNearViewport = distanceFromCenter < Math.max(viewportWidth, viewportHeight);
+      // Only wrap if the item is significantly out of view
+      if (Math.abs(relativeX) > visibleWidth / 2) {
+        const wrapX = Math.sign(relativeX) * -1 * this.dimensions.totalWidth;
+        item.x += wrapX;
+        wrappedItems.add(item);
+      }
 
-      // Only wrap items that are near the viewport
-      if (isNearViewport) {
-        if (relativeX < -viewportWidth / 2) {
-          item.x += this.dimensions.totalWidth;
-        } else if (relativeX > viewportWidth / 2) {
-          item.x -= this.dimensions.totalWidth;
-        }
-
-        if (relativeY < -viewportHeight / 2) {
-          item.y += this.dimensions.totalHeight;
-        } else if (relativeY > viewportHeight / 2) {
-          item.y -= this.dimensions.totalHeight;
-        }
+      if (Math.abs(relativeY) > visibleHeight / 2) {
+        const wrapY = Math.sign(relativeY) * -1 * this.dimensions.totalHeight;
+        item.y += wrapY;
+        wrappedItems.add(item);
       }
     });
+
+    // Clear any momentum if we're at high zoom levels
+    if (viewScale > 4) {
+      this.momentum.x *= 0.5;
+      this.momentum.y *= 0.5;
+    }
 
     this.draw();
   }
@@ -545,11 +567,14 @@ export class WebGLGrid {
   private draw(): void {
     const { gl } = this;
 
+    if (!gl || !this.program) return; // Early return if context is lost
+
+    this.frameCount++;
+
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     gl.useProgram(this.program);
-
     gl.enableVertexAttribArray(this.locations.position);
     gl.enableVertexAttribArray(this.locations.texCoord);
 
@@ -559,17 +584,33 @@ export class WebGLGrid {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoord);
     gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
 
-    // Optimization: Sort items by texture to reduce texture bindings
-    const sortedItems = [...this.gridItems].sort((a, b) => a.imageIndex - b.imageIndex);
+    // Sort items by texture to minimize bindings
+    const sortedItems = [...this.gridItems]
+      .filter((item) => item.opacity > 0)
+      .sort((a, b) => a.imageIndex - b.imageIndex);
+
     let currentTexture: WebGLTexture | null = null;
+    const newFrameItems = new Map<string, GridItem>();
 
     sortedItems.forEach((item) => {
       const image = this.images[item.imageIndex];
-      const texture = this.textures.get(image.url);
+      if (!image) return;
 
+      const texture = this.textures.get(image.url);
       if (!texture) return;
 
-      // Only bind texture if it's different from the current one
+      // Create a unique key for this item's position
+      const itemKey = `${Math.round(item.x)}-${Math.round(item.y)}-${item.imageIndex}`;
+      newFrameItems.set(itemKey, item);
+
+      // Smooth out opacity transitions
+      const lastItem = this.lastFrameItems.get(itemKey);
+      const targetOpacity = item.opacity;
+      item.opacity = lastItem
+        ? lastItem.opacity + (targetOpacity - lastItem.opacity) * 0.3
+        : targetOpacity;
+
+      // Bind texture only if different from current
       if (texture !== currentTexture) {
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.uniform1i(this.locations.texture, 0);
@@ -578,15 +619,18 @@ export class WebGLGrid {
 
       const dimensions = this.calculateImageDimensions(image, item.width, item.height);
       const xOffset = (item.width - dimensions.width) / 2;
-      const yOffset = dimensions.offsetY;
+      const yOffset = dimensions.offsetY || 0;
 
       gl.uniform1f(this.locations.opacity, item.opacity);
 
       const matrix = this.createMatrix(item, dimensions.width, dimensions.height, xOffset, yOffset);
-      gl.uniformMatrix4fv(this.locations.matrix, false, matrix);
 
+      gl.uniformMatrix4fv(this.locations.matrix, false, matrix);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     });
+
+    // Update last frame items
+    this.lastFrameItems = newFrameItems;
   }
 
   private render = (): void => {
