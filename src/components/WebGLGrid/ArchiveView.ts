@@ -17,6 +17,7 @@ export class ArchiveView {
 
     this.setupStyles();
     this.bindExternalControls();
+    this.setupZoomUI();
   }
 
   private setupStyles(): void {
@@ -161,5 +162,46 @@ export class ArchiveView {
 
     const style = document.querySelector('style[data-archive-styles]');
     if (style) style.remove();
+  }
+
+  private setupZoomUI(): void {
+    const zoomUI = this.container.querySelector('.archive-zoom');
+    if (!zoomUI) return;
+
+    // Initial position
+    this.updateZoomPosition();
+
+    // Handle viewport changes
+    let timeoutId: NodeJS.Timeout;
+    const handleResize = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        this.updateZoomPosition();
+      }, 100);
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('scroll', handleResize);
+
+    // Handle visibility changes (for mobile browsers)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        setTimeout(this.updateZoomPosition, 300);
+      }
+    });
+  }
+
+  private updateZoomPosition(): void {
+    const zoomUI = this.container.querySelector('.archive-zoom');
+    if (!zoomUI) return;
+
+    const viewportHeight = window.innerHeight;
+    const bottomOffset = Math.max(32, viewportHeight * 0.05);
+
+    gsap.to(zoomUI, {
+      bottom: bottomOffset,
+      duration: 0.3,
+      ease: 'power2.out',
+    });
   }
 }
