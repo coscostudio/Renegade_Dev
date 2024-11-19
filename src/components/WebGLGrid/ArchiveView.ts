@@ -342,14 +342,19 @@ export class ArchiveView {
   }
 
   public async fadeOut(): Promise<void> {
+    // Create a timeline for coordinated fade out
     return new Promise((resolve) => {
       if (!this.canvas && !this.zoomUI) return resolve();
 
-      gsap.to([this.canvas, this.zoomUI], {
-        autoAlpha: 0,
-        duration: 0.5,
-        ease: 'power2.inOut',
+      const tl = gsap.timeline({
         onComplete: resolve,
+      });
+
+      // Fade out both elements with same timing as page transition
+      tl.to([this.canvas, this.zoomUI], {
+        autoAlpha: 0,
+        duration: 1.5, // Match the page transition duration
+        ease: 'expo.inOut', // Match the page transition ease
       });
     });
   }

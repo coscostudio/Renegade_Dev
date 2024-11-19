@@ -31,6 +31,7 @@ function createActiveLinkBackground() {
     menuContainer.style.position = 'relative';
     menuContainer.appendChild(activeLinkBackground);
     setInitialPosition();
+    setupActiveLinkBackgroundResize(); // Add this line
   }
 }
 
@@ -73,6 +74,43 @@ function animateBackgroundToActiveLink(data) {
     duration: 1.5,
     ease: 'expo.inOut',
   });
+}
+
+function setupActiveLinkBackgroundResize() {
+  if (!activeLinkBackground) return;
+
+  const resizeObserver = new ResizeObserver(
+    debounce(() => {
+      const currentLink = document.querySelector('.menulink.w--current');
+      if (currentLink && activeLinkBackground) {
+        const linkRect = currentLink.getBoundingClientRect();
+        const containerRect = document.querySelector('.menu_container').getBoundingClientRect();
+
+        gsap.to(activeLinkBackground, {
+          left: linkRect.left - containerRect.left,
+          width: linkRect.width,
+          height: linkRect.height,
+          duration: 0.3,
+          ease: 'power2.out',
+        });
+      }
+    }, 100)
+  );
+
+  // Observe both document and menu container for any size changes
+  resizeObserver.observe(document.documentElement);
+  const menuContainer = document.querySelector('.menu_container');
+  if (menuContainer) {
+    resizeObserver.observe(menuContainer);
+  }
+}
+
+function debounce(func: Function, wait: number) {
+  let timeout: NodeJS.Timeout;
+  return (...args: any[]) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  };
 }
 
 function createClickBlocker() {
@@ -129,6 +167,35 @@ function unblockClicks() {
     blocker.style.display = 'none';
     document.body.style.pointerEvents = ''; // Re-enable clicks on the body
   }
+}
+
+function blockActivePageClicks() {
+  // Clear existing blocks first
+  document.querySelectorAll('.menulink, [data-nav-target="index"]').forEach((link) => {
+    link.style.cursor = '';
+    link.style.pointerEvents = '';
+  });
+
+  setTimeout(() => {
+    const currentNamespace = document.body.getAttribute('data-barba-namespace');
+
+    // Block current menu link
+    const currentLink = document.querySelector('.menulink.w--current');
+    if (currentLink) {
+      currentLink.style.cursor = 'default';
+      currentLink.style.pointerEvents = 'none';
+    }
+
+    // If on index, block both menu link and logo
+    if (currentNamespace === 'index') {
+      document
+        .querySelectorAll('.menulink.w--current, [data-nav-target="index"]:not(.menulink)')
+        .forEach((link) => {
+          link.style.cursor = 'default';
+          link.style.pointerEvents = 'none';
+        });
+    }
+  }, 50);
 }
 
 // Video Preloader Class
@@ -666,8 +733,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Barba initialization
 barba.init({
-  debug: true,
-  sync: true,
   transitions: [
     {
       name: 'slide-transition',
@@ -681,21 +746,35 @@ barba.init({
         const direction = getSlideDirection(data.current.namespace, data.next.namespace);
         const tl = gsap.timeline();
 
-        // Handle archive view fadeout if needed
-        if (data.current.namespace === 'archive' && (window as any).archiveView) {
-          await (window as any).archiveView.fadeOut();
-        }
+        // Always add background animation to timeline first
+        tl.add(animateBackgroundToActiveLink(data), 0);
 
-        // Slide out current page
-        tl.to(
-          data.current.container,
-          {
-            x: direction === 'right' ? '-100%' : '100%',
-            duration: 1.5,
-            ease: 'expo.inOut',
-          },
-          0
-        ).add(animateBackgroundToActiveLink(data), 0);
+        // Handle archive view fadeout
+        if (data.current.namespace === 'archive' && (window as any).archiveView) {
+          const fadeOut = (window as any).archiveView.fadeOut();
+
+          // Add both animations to timeline
+          tl.add(fadeOut, 0).to(
+            data.current.container,
+            {
+              x: direction === 'right' ? '-100%' : '100%',
+              duration: 1.5,
+              ease: 'expo.inOut',
+            },
+            0
+          );
+        } else {
+          // Normal page transition
+          tl.to(
+            data.current.container,
+            {
+              x: direction === 'right' ? '-100%' : '100%',
+              duration: 1.5,
+              ease: 'expo.inOut',
+            },
+            0
+          );
+        }
 
         return tl;
       },
@@ -785,10 +864,7 @@ barba.init({
       },
 
       beforeLeave() {
-        if ((window as any).archiveView) {
-          (window as any).archiveView.destroy();
-          delete (window as any).archiveView;
-        }
+        // Only remove the class, don't destroy the view yet
         document.body.classList.remove('archive-page');
       },
     },
@@ -810,16 +886,31 @@ barba.hooks.enter(() => {
   }
 });
 
-barba.hooks.after(async ({ next }) => {
-  // Handle scroll restoration
+barba.hooks.after(async ({ current, next }) => {
+  // Existing code...
   if ('scrollRestoration' in history) {
     history.scrollRestoration = 'manual';
   }
 
-  // Update archive view state
+  // Clean up archive view only after transition is complete
+  if (current?.namespace === 'archive' && (window as any).archiveView) {
+    (window as any).archiveView.destroy();
+    delete (window as any).archiveView;
+  }
+
+  // Update archive view state if it exists
   if ((window as any).archiveView) {
     (window as any).archiveView.isTransitioning = false;
   }
+
+  // Clear any existing blocks before applying new ones
+  document.querySelectorAll('.menulink, .logo-nav').forEach((link) => {
+    link.style.cursor = '';
+    link.style.pointerEvents = '';
+  });
+
+  // Apply new blocks after a short delay
+  setTimeout(blockActivePageClicks, 50);
 
   // Restart Webflow and wait for completion
   restartWebflow();
@@ -830,11 +921,12 @@ barba.hooks.after(async ({ next }) => {
 document.addEventListener('DOMContentLoaded', () => {
   createActiveLinkBackground();
   createClickBlocker();
+  blockActivePageClicks();
   loadAutoVideo();
   preloader.playPreloader().catch(console.error);
 });
 
-// Utility function to load auto video script
+// Utility Functions
 function loadAutoVideo(): void {
   const script = document.createElement('script');
   script.src = 'https://cdn.jsdelivr.net/npm/@finsweet/attributes-autovideo@1/autovideo.js';
@@ -842,5 +934,5 @@ function loadAutoVideo(): void {
   document.body.appendChild(script);
 }
 
-// Export necessary functions if needed
+// Exports
 export { blockClicks, createClickBlocker, loadAutoVideo, unblockClicks };

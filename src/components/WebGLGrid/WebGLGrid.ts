@@ -28,6 +28,9 @@ export class WebGLGrid {
   private lastTouchX = 0;
   private lastTouchY = 0;
   private momentum = { x: 0, y: 0 };
+  private targetX = 0;
+  private targetY = 0;
+  private multiplier = 2.5;
   private viewportCenter = { x: 0, y: 0 };
   private maxScale = 18;
   private minScale = 0.7;
@@ -42,21 +45,19 @@ export class WebGLGrid {
     y: 0,
   };
 
-  // Add these properties to the WebGLGrid class
   private getResponsiveZoomLevels(): number[] {
     const { width: screenWidth } = this.gl.canvas.getBoundingClientRect();
 
-    // Define breakpoints
     const isMobile = screenWidth <= 768;
     const isTablet = screenWidth > 768 && screenWidth <= 1024;
 
     if (isMobile) {
-      return [1, 1.5, 3, 6, 10, 14, 18]; // Mobile zoom levels
+      return [1, 1.5, 3, 6, 10, 14, 18];
     }
     if (isTablet) {
-      return [0.7, 1.25, 2.5, 5, 8, 12]; // Tablet zoom levels
+      return [0.7, 1.25, 2.5, 5, 8, 12];
     }
-    return [0.7, 1, 3, 6, 8]; // Desktop zoom levels
+    return [0.7, 1, 3, 6, 8];
   }
 
   private getResponsiveMaxScale(): number {
@@ -69,20 +70,19 @@ export class WebGLGrid {
     const currentScale = this.viewTransform.scale;
 
     if (factor > 1) {
-      // Zooming in
       for (const level of zoomLevels) {
         if (level > currentScale + 0.1) {
           return level;
         }
       }
-      return zoomLevels[zoomLevels.length - 1]; // Return max level if no higher level found
-    } // Zooming out
+      return zoomLevels[zoomLevels.length - 1];
+    }
     for (let i = zoomLevels.length - 1; i >= 0; i--) {
       if (zoomLevels[i] < currentScale - 0.1) {
         return zoomLevels[i];
       }
     }
-    return zoomLevels[0]; // Return min level if no lower level found
+    return zoomLevels[0];
   }
 
   private vertexShader = `
@@ -147,7 +147,6 @@ export class WebGLGrid {
   private setupWebGL(): void {
     const { gl } = this;
 
-    // Create and compile shaders
     const vertShader = this.createShader(this.vertexShader, gl.VERTEX_SHADER);
     const fragShader = this.createShader(this.fragmentShader, gl.FRAGMENT_SHADER);
     this.program = this.createProgram(vertShader, fragShader);
@@ -174,14 +173,12 @@ export class WebGLGrid {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoord);
     gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
 
-    // Updated WebGL configuration
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
 
-    // Set clear color with alpha
     gl.clearColor(0, 0, 0, 0);
   }
 
@@ -226,7 +223,6 @@ export class WebGLGrid {
     window.addEventListener('touchmove', boundTouchMove, { passive: false });
     window.addEventListener('touchend', boundTouchEnd);
 
-    // Store bound functions for cleanup
     this.boundEvents = {
       mouseDown: boundMouseDown,
       mouseMove: boundMouseMove,
@@ -236,7 +232,6 @@ export class WebGLGrid {
       touchEnd: boundTouchEnd,
     };
 
-    // Prevent default scroll behavior
     canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
   }
 
@@ -246,6 +241,9 @@ export class WebGLGrid {
     this.lastMouseY = e.clientY;
     this.momentum = { x: 0, y: 0 };
 
+    this.targetX = this.viewTransform.x;
+    this.targetY = this.viewTransform.y;
+
     const canvas = e.target as HTMLCanvasElement;
     canvas.style.cursor = 'grabbing';
   }
@@ -253,8 +251,8 @@ export class WebGLGrid {
   private handleMouseMove(e: MouseEvent): void {
     if (!this.isDragging) return;
 
-    const deltaX = e.clientX - this.lastMouseX;
-    const deltaY = e.clientY - this.lastMouseY;
+    const deltaX = (e.clientX - this.lastMouseX) * this.multiplier;
+    const deltaY = (e.clientY - this.lastMouseY) * this.multiplier;
 
     this.handleDrag(deltaX, deltaY);
 
@@ -272,9 +270,11 @@ export class WebGLGrid {
     e.preventDefault();
     if (e.touches.length === 1) {
       this.isDragging = true;
-      this.lastTouchX = e.touches[0].clientX;
-      this.lastTouchY = e.touches[0].clientY;
+      this.lastMouseX = e.touches[0].clientX;
+      this.lastMouseY = e.touches[0].clientY;
       this.momentum = { x: 0, y: 0 };
+      this.targetX = this.viewTransform.x;
+      this.targetY = this.viewTransform.y;
     }
   }
 
@@ -282,13 +282,13 @@ export class WebGLGrid {
     e.preventDefault();
     if (!this.isDragging || e.touches.length !== 1) return;
 
-    const deltaX = e.touches[0].clientX - this.lastTouchX;
-    const deltaY = e.touches[0].clientY - this.lastTouchY;
+    const deltaX = (e.touches[0].clientX - this.lastMouseX) * this.multiplier;
+    const deltaY = (e.touches[0].clientY - this.lastMouseY) * this.multiplier;
 
     this.handleDrag(deltaX, deltaY);
 
-    this.lastTouchX = e.touches[0].clientX;
-    this.lastTouchY = e.touches[0].clientY;
+    this.lastMouseX = e.touches[0].clientX;
+    this.lastMouseY = e.touches[0].clientY;
   }
 
   private handleTouchEnd(): void {
@@ -296,14 +296,37 @@ export class WebGLGrid {
   }
 
   private handleDrag(deltaX: number, deltaY: number): void {
-    // Simple position update without grid alignment
-    this.viewTransform.x += deltaX;
-    this.viewTransform.y += deltaY;
+    this.targetX += deltaX;
+    this.targetY += deltaY;
 
     this.momentum = {
       x: deltaX,
       y: deltaY,
     };
+  }
+
+  private updatePosition(): void {
+    const easing = 0.085;
+
+    if (!this.isDragging) {
+      const friction = 0.95;
+      this.momentum.x *= friction;
+      this.momentum.y *= friction;
+
+      if (Math.abs(this.momentum.x) > 0.01 || Math.abs(this.momentum.y) > 0.01) {
+        this.targetX += this.momentum.x;
+        this.targetY += this.momentum.y;
+      }
+    }
+
+    const dx = this.targetX - this.viewTransform.x;
+    const dy = this.targetY - this.viewTransform.y;
+
+    this.viewTransform.x += dx * easing;
+    this.viewTransform.y += dy * easing;
+
+    this.viewTransform.x = Math.round(this.viewTransform.x * 100) / 100;
+    this.viewTransform.y = Math.round(this.viewTransform.y * 100) / 100;
 
     this.updateGridPositions();
   }
@@ -328,7 +351,6 @@ export class WebGLGrid {
         img.src = url;
       });
     });
-
     this.images = await Promise.all(loadPromises);
   }
 
@@ -336,7 +358,6 @@ export class WebGLGrid {
     const { gl } = this;
     const texture = gl.createTexture();
 
-    // Ensure we're working with power-of-two dimensions
     const canvas = document.createElement('canvas');
     const size = Math.pow(2, Math.ceil(Math.log2(Math.max(image.width, image.height))));
     canvas.width = size;
@@ -409,7 +430,6 @@ export class WebGLGrid {
     this.gridItems = [];
     let index = 0;
 
-    // Center the grid on (0,0) in world space
     const startCol = Math.floor(-this.dimensions.columnCount / 2);
     const startRow = Math.floor(-this.dimensions.rowCount / 2);
 
@@ -432,7 +452,6 @@ export class WebGLGrid {
       }
     }
 
-    // Initialize view transform to center
     const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
     this.viewTransform = {
       scale: 1,
@@ -445,16 +464,13 @@ export class WebGLGrid {
     const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
     const viewScale = this.viewTransform.scale;
 
-    // Increase buffer zone for better item retention
     const bufferFactor = Math.max(1.5, viewScale > 4 ? 2 : 1.5);
     const visibleWidth = (canvasWidth / viewScale) * bufferFactor;
     const visibleHeight = (canvasHeight / viewScale) * bufferFactor;
 
-    // Calculate world space center
     const worldCenterX = -this.viewTransform.x / viewScale + canvasWidth / 2 / viewScale;
     const worldCenterY = -this.viewTransform.y / viewScale + canvasHeight / 2 / viewScale;
 
-    // Track which items we've wrapped to prevent double-wrapping
     const wrappedItems = new Set<GridItem>();
 
     this.gridItems.forEach((item) => {
@@ -463,7 +479,6 @@ export class WebGLGrid {
       const relativeX = item.x - worldCenterX;
       const relativeY = item.y - worldCenterY;
 
-      // Only wrap if the item is significantly out of view
       if (Math.abs(relativeX) > visibleWidth / 2) {
         const wrapX = Math.sign(relativeX) * -1 * this.dimensions.totalWidth;
         item.x += wrapX;
@@ -477,53 +492,41 @@ export class WebGLGrid {
       }
     });
 
-    // Clear any momentum if we're at high zoom levels
     if (viewScale > 4) {
       this.momentum.x *= 0.5;
       this.momentum.y *= 0.5;
     }
-
-    this.draw();
   }
 
   public setZoom(factor: number, originX?: number, originY?: number): void {
     const canvas = this.gl.canvas as HTMLCanvasElement;
     const rect = canvas.getBoundingClientRect();
 
-    // Get current zoom levels and max scale
     const zoomLevels = this.getResponsiveZoomLevels();
     const maxScale = zoomLevels[zoomLevels.length - 1];
 
-    // If we're already at max scale and trying to zoom in, exit early
     if (this.viewTransform.scale >= maxScale && factor > 1) {
       return;
     }
 
-    // If we're already at min scale and trying to zoom out, exit early
     if (this.viewTransform.scale <= zoomLevels[0] && factor < 1) {
       return;
     }
 
-    // Always zoom from exact center of viewport
     const pixelRatio = window.devicePixelRatio;
     const centerX = (rect.width * pixelRatio) / 2;
     const centerY = (rect.height * pixelRatio) / 2;
 
-    // Get the next discrete zoom level
     const newScale = this.getNextZoomLevel(factor);
 
-    // If we're already at this scale, exit early
     if (Math.abs(newScale - this.viewTransform.scale) < 0.001) return;
 
-    // Convert viewport center to world space
     const worldCenterX = (centerX - this.viewTransform.x) / this.viewTransform.scale;
     const worldCenterY = (centerY - this.viewTransform.y) / this.viewTransform.scale;
 
-    // Calculate new position that keeps the center point fixed
     const newX = centerX - worldCenterX * newScale;
     const newY = centerY - worldCenterY * newScale;
 
-    // Update transform with animation
     gsap.to(this.viewTransform, {
       scale: newScale,
       x: newX,
@@ -546,15 +549,12 @@ export class WebGLGrid {
     const matrix = new Float32Array(16);
     const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
 
-    // Calculate final dimensions without rounding
     const finalWidth = width * this.viewTransform.scale;
     const finalHeight = height * this.viewTransform.scale;
 
-    // Calculate final position without rounding
     const finalX = (item.x + xOffset) * this.viewTransform.scale + this.viewTransform.x;
     const finalY = (item.y + yOffset) * this.viewTransform.scale + this.viewTransform.y;
 
-    // Convert to clip space
     matrix[0] = (finalWidth * 2) / canvasWidth;
     matrix[5] = (finalHeight * 2) / canvasHeight;
     matrix[12] = (finalX * 2) / canvasWidth - 1;
@@ -567,7 +567,7 @@ export class WebGLGrid {
   private draw(): void {
     const { gl } = this;
 
-    if (!gl || !this.program) return; // Early return if context is lost
+    if (!gl || !this.program) return;
 
     this.frameCount++;
 
@@ -584,7 +584,6 @@ export class WebGLGrid {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoord);
     gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
 
-    // Sort items by texture to minimize bindings
     const sortedItems = [...this.gridItems]
       .filter((item) => item.opacity > 0)
       .sort((a, b) => a.imageIndex - b.imageIndex);
@@ -599,18 +598,15 @@ export class WebGLGrid {
       const texture = this.textures.get(image.url);
       if (!texture) return;
 
-      // Create a unique key for this item's position
       const itemKey = `${Math.round(item.x)}-${Math.round(item.y)}-${item.imageIndex}`;
       newFrameItems.set(itemKey, item);
 
-      // Smooth out opacity transitions
       const lastItem = this.lastFrameItems.get(itemKey);
       const targetOpacity = item.opacity;
       item.opacity = lastItem
         ? lastItem.opacity + (targetOpacity - lastItem.opacity) * 0.3
         : targetOpacity;
 
-      // Bind texture only if different from current
       if (texture !== currentTexture) {
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.uniform1i(this.locations.texture, 0);
@@ -629,23 +625,13 @@ export class WebGLGrid {
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     });
 
-    // Update last frame items
     this.lastFrameItems = newFrameItems;
   }
 
   private render = (): void => {
     if (!this.isActive || !this.isInitialized) return;
 
-    if (!this.isDragging) {
-      const friction = 0.95;
-      this.momentum.x *= friction;
-      this.momentum.y *= friction;
-
-      if (Math.abs(this.momentum.x) > 0.01 || Math.abs(this.momentum.y) > 0.01) {
-        this.handleDrag(this.momentum.x, this.momentum.y);
-      }
-    }
-
+    this.updatePosition();
     this.draw();
     requestAnimationFrame(this.render);
   };
@@ -687,21 +673,17 @@ export class WebGLGrid {
     const { gl } = this;
     const canvas = gl.canvas as HTMLCanvasElement;
 
-    // Clean up textures
     this.textures.forEach((texture) => {
       gl.deleteTexture(texture);
     });
     this.textures.clear();
 
-    // Delete buffers
     gl.deleteBuffer(this.buffers.position);
     gl.deleteBuffer(this.buffers.texCoord);
 
-    // Delete program and shaders
     gl.useProgram(null);
     gl.deleteProgram(this.program);
 
-    // Remove event listeners with proper bindings
     if (this.boundEvents) {
       canvas.removeEventListener('mousedown', this.boundEvents.mouseDown);
       window.removeEventListener('mousemove', this.boundEvents.mouseMove);
