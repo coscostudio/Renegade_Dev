@@ -658,7 +658,7 @@ function initializeAccordion() {
     
     @media (max-width: 768px) {
       .js-accordion-item {
-        min-height: 5rem;
+        min-height: 6rem;
       }
     }
     
@@ -680,7 +680,7 @@ function initializeAccordion() {
     
     @media (max-width: 768px) {
       .js-accordion-item.active {
-        min-height: 5rem;
+        min-height: 6rem;
       }
     }
 
