@@ -27,6 +27,8 @@ export class WebGLGrid {
   private lastMouseY = 0;
   private lastTouchX = 0;
   private lastTouchY = 0;
+  private isZooming = false;
+  private zoomAnimation: gsap.core.Tween | null = null;
   private momentum = { x: 0, y: 0 };
   private targetX = 0;
   private targetY = 0;
@@ -306,6 +308,9 @@ export class WebGLGrid {
   }
 
   private updatePosition(): void {
+    // Skip position updates during zoom
+    if (this.isZooming) return;
+
     const easing = 0.085;
 
     if (!this.isDragging) {
@@ -322,8 +327,15 @@ export class WebGLGrid {
     const dx = this.targetX - this.viewTransform.x;
     const dy = this.targetY - this.viewTransform.y;
 
-    this.viewTransform.x += dx * easing;
-    this.viewTransform.y += dy * easing;
+    // Only apply easing if the distance is significant
+    if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
+      this.viewTransform.x += dx * easing;
+      this.viewTransform.y += dy * easing;
+    } else {
+      // Snap to target if very close
+      this.viewTransform.x = this.targetX;
+      this.viewTransform.y = this.targetY;
+    }
 
     this.viewTransform.x = Math.round(this.viewTransform.x * 100) / 100;
     this.viewTransform.y = Math.round(this.viewTransform.y * 100) / 100;
@@ -527,7 +539,18 @@ export class WebGLGrid {
     const newX = centerX - worldCenterX * newScale;
     const newY = centerY - worldCenterY * newScale;
 
-    gsap.to(this.viewTransform, {
+    // Cancel any existing zoom animation
+    if (this.zoomAnimation) {
+      this.zoomAnimation.kill();
+    }
+
+    // Set zooming flag and update targets
+    this.isZooming = true;
+    this.targetX = newX;
+    this.targetY = newY;
+
+    // Create new zoom animation
+    this.zoomAnimation = gsap.to(this.viewTransform, {
       scale: newScale,
       x: newX,
       y: newY,
@@ -535,6 +558,17 @@ export class WebGLGrid {
       ease: 'power2.out',
       onUpdate: () => {
         this.updateGridPositions();
+      },
+      onComplete: () => {
+        this.isZooming = false;
+        this.zoomAnimation = null;
+
+        // Ensure targets are synced with final position
+        this.targetX = this.viewTransform.x;
+        this.targetY = this.viewTransform.y;
+
+        // Reset momentum
+        this.momentum = { x: 0, y: 0 };
       },
     });
   }
