@@ -4,6 +4,9 @@ import { gsap } from 'gsap';
 import { Draggable } from 'gsap/Draggable';
 import { Flip } from 'gsap/Flip';
 import { ScrollToPlugin } from 'gsap/ScrollToPlugin';
+
+import { videoCacheManager } from './components/video/cacheManager';
+import { initializeVideo } from './components/video/videoLoader';
 gsap.registerPlugin(Draggable);
 
 import { ArchiveView } from './components/WebGLGrid/ArchiveView';
@@ -269,6 +272,9 @@ class VideoPreloader {
 
     const preloader = document.querySelector('.preloader-container') as HTMLElement;
     const video = preloader.querySelector('.preloader-video') as HTMLVideoElement;
+
+    // Initialize preloader video separately
+    await initializeVideo(preloader, true);
     const pageWrapper = document.querySelector('.page-wrapper') as HTMLElement;
 
     // Store original page wrapper styles
@@ -392,7 +398,24 @@ document.addEventListener('DOMContentLoaded', () => {
   preloader.playPreloader().catch(console.error);
 });
 
+function loadAutoVideo(): void {
+  const script = document.createElement('script');
+  script.src = 'https://cdn.jsdelivr.net/npm/@finsweet/attributes-autovideo@1/autovideo.js';
+  script.defer = true;
+  document.body.appendChild(script);
+}
+
 function initializeAccordion() {
+  async function initializeAndPlayVideo(videoElement) {
+    if (!videoElement) return;
+    videoElement.setAttribute('data-autoplay', 'true'); // Add this line
+    videoElement.muted = false; // Unmute
+    videoElement.playsInline = true;
+    videoElement.loop = true;
+    videoElement.play().catch(console.warn);
+    initializeVideo(videoElement);
+  }
+
   const accordion = (function () {
     const settings = {
       duration: 1,
@@ -455,11 +478,14 @@ function initializeAccordion() {
             const openHeader = $openItem.find('.js-accordion-header')[0];
 
             const closeTl = gsap.timeline({
-              onComplete: () => {
+              onComplete: async () => {
                 const targetPosition = $clicked.offset().top;
                 const openTl = gsap.timeline({
-                  onComplete: () => {
+                  onComplete: async () => {
                     isAnimating = false;
+                    if (videoElement) {
+                      await initializeAndPlayVideo(videoElement);
+                    }
                   },
                 });
 
@@ -542,8 +568,11 @@ function initializeAccordion() {
           } else {
             const targetPosition = $clicked.offset().top;
             const openTl = gsap.timeline({
-              onComplete: () => {
+              onComplete: async () => {
                 isAnimating = false;
+                if (videoElement) {
+                  await initializeAndPlayVideo(videoElement);
+                }
               },
             });
 
@@ -603,10 +632,6 @@ function initializeAccordion() {
               isAnimating = false;
             },
           });
-
-          if (videoElement) {
-            videoElement.setAttribute('data-autoplay', 'false');
-          }
 
           closeTl
             .to(
@@ -683,7 +708,7 @@ function initializeAccordion() {
         min-height: 6rem;
       }
     }
-
+ 
     .js-accordion-item.active + .js-accordion-item {
       border-top: none !important;
     }
@@ -731,72 +756,84 @@ document.addEventListener('DOMContentLoaded', () => {
   preloader.playPreloader().catch(console.error);
 });
 
+window.addEventListener('unload', () => {
+  videoCacheManager.cleanup();
+});
+
 // Barba initialization
 barba.init({
   transitions: [
     {
       name: 'slide-transition',
       sync: true,
-
-      beforeLeave() {
+      debug: true,
+      before(data) {
         blockClicks();
+        if (data?.next?.container) {
+          gsap.set(data.next.container, {
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            visibility: 'visible',
+          });
+        }
       },
-
       async leave(data) {
+        const currentScroll = window.scrollY;
         const direction = getSlideDirection(data.current.namespace, data.next.namespace);
         const tl = gsap.timeline();
 
-        // Always add background animation to timeline first
+        gsap.set(data.current.container, {
+          position: 'fixed',
+          top: -currentScroll,
+          left: 0,
+          width: '100%',
+        });
+
         tl.add(animateBackgroundToActiveLink(data), 0);
 
-        // Handle archive view fadeout
         if (data.current.namespace === 'archive' && (window as any).archiveView) {
           const fadeOut = (window as any).archiveView.fadeOut();
-
-          // Add both animations to timeline
-          tl.add(fadeOut, 0).to(
-            data.current.container,
-            {
-              x: direction === 'right' ? '-100%' : '100%',
-              duration: 1.5,
-              ease: 'expo.inOut',
-            },
-            0
-          );
-        } else {
-          // Normal page transition
-          tl.to(
-            data.current.container,
-            {
-              x: direction === 'right' ? '-100%' : '100%',
-              duration: 1.5,
-              ease: 'expo.inOut',
-            },
-            0
-          );
+          tl.add(fadeOut, 0);
         }
+
+        tl.to(
+          data.current.container,
+          {
+            x: direction === 'right' ? '-100%' : '100%',
+            duration: 1.5,
+            ease: 'expo.inOut',
+          },
+          0
+        );
 
         return tl;
       },
-
       enter(data) {
         const direction = getSlideDirection(data.current.namespace, data.next.namespace);
 
-        // Set initial position for incoming page
         gsap.set(data.next.container, {
           x: direction === 'right' ? '100%' : '-100%',
         });
 
-        // Ensure visibility
-        data.next.container.style.visibility = 'visible';
-
-        // Animate in new page
         return gsap.to(data.next.container, {
           x: 0,
           duration: 1.5,
           ease: 'expo.inOut',
           onComplete: unblockClicks,
         });
+      },
+      after(data) {
+        if ('scrollRestoration' in history) {
+          history.scrollRestoration = 'manual';
+        }
+
+        unblockClicks();
+        gsap.set([data.current.container, data.next.container], {
+          clearProps: 'position,top,left,width,transform',
+        });
+        window.scrollTo(0, 0);
       },
     },
   ],
@@ -814,7 +851,6 @@ barba.init({
       namespace: 'info',
       afterEnter() {
         restartWebflow();
-        loadAutoVideo();
       },
     },
     {
@@ -915,6 +951,8 @@ barba.hooks.after(async ({ current, next }) => {
   // Restart Webflow and wait for completion
   restartWebflow();
   await new Promise((resolve) => setTimeout(resolve, 100));
+  loadAutoVideo(); // Add this
+  initializeVideo(document);
 });
 
 // Initialize on page load
@@ -922,17 +960,10 @@ document.addEventListener('DOMContentLoaded', () => {
   createActiveLinkBackground();
   createClickBlocker();
   blockActivePageClicks();
-  loadAutoVideo();
+  loadAutoVideo(); // Add this
+  initializeVideo(document);
   preloader.playPreloader().catch(console.error);
 });
 
-// Utility Functions
-function loadAutoVideo(): void {
-  const script = document.createElement('script');
-  script.src = 'https://cdn.jsdelivr.net/npm/@finsweet/attributes-autovideo@1/autovideo.js';
-  script.defer = true;
-  document.body.appendChild(script);
-}
-
 // Exports
-export { blockClicks, createClickBlocker, loadAutoVideo, unblockClicks };
+export { blockClicks, createClickBlocker, unblockClicks };
