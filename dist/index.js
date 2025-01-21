@@ -10165,9 +10165,7 @@
         position: "fixed",
         width: "100%",
         opacity: 1,
-        // Make visible again
         visibility: "visible"
-        // Make visible again
       });
       await new Promise((resolve) => {
         video.muted = true;
@@ -10177,8 +10175,7 @@
         });
         const playPromise = video.play();
         if (playPromise !== void 0) {
-          playPromise.catch((error) => {
-            console.log("Video play failed:", error);
+          playPromise.catch(() => {
           });
         }
         const checkVideo = setInterval(() => {
@@ -10341,15 +10338,10 @@
       }
     }
     function resetVideo(videoElement) {
-      console.log("Resetting video");
       if (videoElement && videoElement instanceof HTMLVideoElement) {
-        console.log("Valid video element found:", videoElement);
         videoElement.pause();
         videoElement.currentTime = 0;
         videoElement.load();
-        console.log("Video reset to:", videoElement.currentTime);
-      } else {
-        console.warn("Invalid video element:", videoElement);
       }
     }
     function getViewportHeight() {
@@ -10665,7 +10657,6 @@
       {
         name: "slide-transition",
         sync: true,
-        debug: true,
         before(data) {
           blockClicks();
           if (data?.next?.container) {
@@ -10772,7 +10763,6 @@
             gsapWithCSS.set(data.next.container, { autoAlpha: 1 });
             archiveView.show();
           } catch (error) {
-            console.error("Error initializing archive view:", error);
           }
         },
         beforeLeave() {

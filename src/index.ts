@@ -273,27 +273,22 @@ class VideoPreloader {
     const preloader = document.querySelector('.preloader-container') as HTMLElement;
     const video = preloader.querySelector('.preloader-video') as HTMLVideoElement;
 
-    // Initialize preloader video separately
     await initializeVideo(preloader, true);
     const pageWrapper = document.querySelector('.page-wrapper') as HTMLElement;
 
-    // Store original page wrapper styles
     const computedStyle = window.getComputedStyle(pageWrapper);
     const originalWidth = computedStyle.width;
 
-    // Immediately set initial states
     document.body.classList.add('loading');
 
-    // Force initial positions
     gsap.set(pageWrapper, {
       y: '100vh',
       position: 'fixed',
       width: '100%',
-      opacity: 1, // Make visible again
-      visibility: 'visible', // Make visible again
+      opacity: 1,
+      visibility: 'visible',
     });
 
-    // Play video and set up transition
     await new Promise<void>((resolve) => {
       video.muted = true;
       video.playsInline = true;
@@ -304,9 +299,7 @@ class VideoPreloader {
 
       const playPromise = video.play();
       if (playPromise !== undefined) {
-        playPromise.catch((error) => {
-          console.log('Video play failed:', error);
-        });
+        playPromise.catch(() => {});
       }
 
       const checkVideo = setInterval(() => {
@@ -317,12 +310,10 @@ class VideoPreloader {
             () => {
               const tl = gsap.timeline({
                 onComplete: () => {
-                  // Explicitly set back to static
                   pageWrapper.style.position = 'static';
                   pageWrapper.style.width = originalWidth;
                   pageWrapper.style.transform = 'none';
 
-                  // Then remove loading class and preloader
                   document.body.classList.remove('loading');
                   gsap.set(preloader, { display: 'none' });
                   preloader.remove();
@@ -350,19 +341,16 @@ class VideoPreloader {
         }
       }, 100);
 
-      // Fallback
       setTimeout(() => {
         if (!video.duration) {
           clearInterval(checkVideo);
 
           const tl = gsap.timeline({
             onComplete: () => {
-              // Explicitly set back to static
               pageWrapper.style.position = 'static';
               pageWrapper.style.width = originalWidth;
               pageWrapper.style.transform = 'none';
 
-              // Then remove loading class and preloader
               document.body.classList.remove('loading');
               gsap.set(preloader, { display: 'none' });
               preloader.remove();
@@ -504,15 +492,10 @@ function initializeAccordion() {
   }
 
   function resetVideo(videoElement) {
-    console.log('Resetting video');
     if (videoElement && videoElement instanceof HTMLVideoElement) {
-      console.log('Valid video element found:', videoElement);
       videoElement.pause();
       videoElement.currentTime = 0;
       videoElement.load();
-      console.log('Video reset to:', videoElement.currentTime);
-    } else {
-      console.warn('Invalid video element:', videoElement);
     }
   }
 
@@ -862,7 +845,7 @@ barba.init({
     {
       name: 'slide-transition',
       sync: true,
-      debug: true,
+
       before(data) {
         blockClicks();
         if (data?.next?.container) {
@@ -954,7 +937,6 @@ barba.init({
       beforeEnter() {
         document.body.classList.add('archive-page');
 
-        // Add initial styles to prevent flash
         const style = document.createElement('style');
         style.id = 'archive-init-styles';
         style.textContent = `
@@ -970,33 +952,26 @@ barba.init({
 
       async afterEnter(data) {
         try {
-          // Ensure container is hidden during setup
           gsap.set(data.next.container, { autoAlpha: 0 });
 
-          // Small delay to ensure DOM is ready
           await new Promise((resolve) => setTimeout(resolve, 100));
 
-          // Initialize archive view
           const archiveView = new ArchiveView(data.next.container);
           await archiveView.init();
 
-          // Store reference globally
           (window as any).archiveView = archiveView;
 
-          // Remove initial hiding styles
           const initStyles = document.getElementById('archive-init-styles');
           if (initStyles) initStyles.remove();
 
-          // Show content with smooth fade
           gsap.set(data.next.container, { autoAlpha: 1 });
           archiveView.show();
         } catch (error) {
-          console.error('Error initializing archive view:', error);
+          // Error handling without console.error
         }
       },
 
       beforeLeave() {
-        // Only remove the class, don't destroy the view yet
         document.body.classList.remove('archive-page');
       },
     },
@@ -1019,7 +994,6 @@ barba.hooks.enter(() => {
 });
 
 barba.hooks.after(async ({ current, next }) => {
-  // Existing code...
   if ('scrollRestoration' in history) {
     history.scrollRestoration = 'manual';
   }
@@ -1047,7 +1021,7 @@ barba.hooks.after(async ({ current, next }) => {
   // Restart Webflow and wait for completion
   restartWebflow();
   await new Promise((resolve) => setTimeout(resolve, 100));
-  loadAutoVideo(); // Add this
+  loadAutoVideo();
   initializeVideo(document);
 });
 
