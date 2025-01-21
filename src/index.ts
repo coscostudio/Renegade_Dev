@@ -289,6 +289,8 @@ class VideoPreloader {
       y: '100vh',
       position: 'fixed',
       width: '100%',
+      opacity: 1, // Make visible again
+      visibility: 'visible', // Make visible again
     });
 
     // Play video and set up transition
@@ -405,8 +407,50 @@ function loadAutoVideo(): void {
   document.body.appendChild(script);
 }
 
+function addLoadingStyles() {
+  const style = document.createElement('style');
+  style.textContent = `
+    .accordion-loader {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #fafafa;
+      z-index: 2;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s ease, visibility 0.3s ease;
+    }
+
+    .accordion-loader.is-loading {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .text-size-main {
+      opacity: 0.8;
+    }
+
+    @keyframes loadingDots {
+      0% { content: '.'; }
+      33% { content: '..'; }
+      66% { content: '...'; }
+    }
+
+    .accordion-loader::after {
+      content: '.';
+      display: inline-block;
+      animation: loadingDots 1.5s infinite;
+      min-width: 24px;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 function initializeAccordion() {
-  async function initializeAndPlayVideo(videoElement) {
+  addLoadingStyles();
+
+  async function initializeAndPlayVideo(videoElement, loaderElement) {
     if (!videoElement || !(videoElement instanceof HTMLVideoElement)) {
       console.warn('Invalid video element provided:', videoElement);
       return;
@@ -418,10 +462,72 @@ function initializeAccordion() {
     videoElement.loop = true;
     videoElement.volume = 1;
 
+    // Show loader while video is loading
+    if (loaderElement) {
+      loaderElement.classList.add('is-loading');
+    }
+
+    // Create a promise that resolves when the video can play
+    const canPlayPromise = new Promise((resolve) => {
+      const checkCanPlay = () => {
+        if (videoElement.readyState >= 3) {
+          resolve();
+        } else {
+          videoElement.addEventListener('canplay', resolve, { once: true });
+        }
+      };
+      checkCanPlay();
+    });
+
     try {
+      // Wait for video to be ready to play
+      await Promise.race([
+        canPlayPromise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Video load timeout')), 30000)
+        ),
+      ]);
+
+      // Hide loader once video is ready
+      if (loaderElement) {
+        loaderElement.classList.remove('is-loading');
+      }
+
       await videoElement.play();
     } catch (error) {
       console.warn('Play failed:', error);
+      // Hide loader on error
+      if (loaderElement) {
+        loaderElement.classList.remove('is-loading');
+      }
+    }
+  }
+
+  function resetVideo(videoElement) {
+    console.log('Resetting video');
+    if (videoElement && videoElement instanceof HTMLVideoElement) {
+      console.log('Valid video element found:', videoElement);
+      videoElement.pause();
+      videoElement.currentTime = 0;
+      videoElement.load();
+      console.log('Video reset to:', videoElement.currentTime);
+    } else {
+      console.warn('Invalid video element:', videoElement);
+    }
+  }
+
+  function getViewportHeight() {
+    return '101dvh';
+  }
+
+  function verifyPosition($element) {
+    const currentTop = $element.offset().top;
+    if (Math.abs(window.pageYOffset - currentTop) > 2) {
+      gsap.to(window, {
+        duration: 0.5,
+        scrollTo: currentTop,
+        ease: 'expo.out',
+      });
     }
   }
 
@@ -433,44 +539,17 @@ function initializeAccordion() {
 
     let isAnimating = false;
 
-    function getViewportHeight() {
-      return '101dvh';
-    }
-
-    function resetVideo(videoElement) {
-      console.log('Resetting video');
-      if (videoElement && videoElement instanceof HTMLVideoElement) {
-        console.log('Valid video element found:', videoElement);
-        videoElement.pause();
-        videoElement.currentTime = 0;
-        videoElement.load();
-        console.log('Video reset to:', videoElement.currentTime);
-      } else {
-        console.warn('Invalid video element:', videoElement);
-      }
-    }
-
-    function verifyPosition($element) {
-      const currentTop = $element.offset().top;
-      if (Math.abs(window.pageYOffset - currentTop) > 2) {
-        gsap.to(window, {
-          duration: 0.5,
-          scrollTo: currentTop,
-          ease: 'expo.out',
-        });
-      }
-    }
-
-    function getElementRelativePosition($element) {
-      const rect = $element[0].getBoundingClientRect();
-      return {
-        top: rect.top,
-        left: rect.left,
-      };
-    }
-
     return {
       init() {
+        // Add loader elements to each accordion item
+        $('.js-accordion-item').each(function () {
+          const $item = $(this);
+          const loader = document.createElement('div');
+          loader.className = 'accordion-loader text-size-main';
+          loader.textContent = 'LOADING';
+          $item.find('.js-accordion-body').append(loader);
+        });
+
         $('.js-accordion-item').on('click', function () {
           if (isAnimating) return;
           accordion.toggle($(this));
@@ -478,7 +557,8 @@ function initializeAccordion() {
       },
       toggle($clicked) {
         const accordionBody = $clicked.find('.js-accordion-body')[0];
-        const videoElement = $clicked.find('event-video')[0];
+        const videoElement = $clicked.find('.event-video')[0];
+        const loaderElement = $clicked.find('.accordion-loader')[0];
         const accordionHeader = $clicked.find('.js-accordion-header')[0];
         const isOpening = !$clicked.hasClass('active');
         let resizeObserver;
@@ -499,7 +579,7 @@ function initializeAccordion() {
                   onComplete: async () => {
                     isAnimating = false;
                     if (videoElement) {
-                      await initializeAndPlayVideo(videoElement);
+                      await initializeAndPlayVideo(videoElement, loaderElement);
                     }
                   },
                 });
@@ -586,7 +666,7 @@ function initializeAccordion() {
               onComplete: async () => {
                 isAnimating = false;
                 if (videoElement) {
-                  await initializeAndPlayVideo(videoElement);
+                  await initializeAndPlayVideo(videoElement, loaderElement);
                 }
               },
             });
@@ -766,6 +846,7 @@ function initializeAccordion() {
   gsap.registerPlugin(Flip, ScrollToPlugin);
   accordion.init();
 }
+
 // preloader
 document.addEventListener('DOMContentLoaded', () => {
   preloader.playPreloader().catch(console.error);
