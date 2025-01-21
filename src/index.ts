@@ -444,47 +444,68 @@ function initializeAccordion() {
       return;
     }
 
-    videoElement.setAttribute('data-autoplay', 'true');
-    videoElement.removeAttribute('muted');
-    videoElement.playsInline = true;
-    videoElement.loop = true;
-    videoElement.volume = 1;
-
     // Show loader while video is loading
     if (loaderElement) {
       loaderElement.classList.add('is-loading');
     }
 
-    // Create a promise that resolves when the video can play
-    const canPlayPromise = new Promise((resolve) => {
-      const checkCanPlay = () => {
-        if (videoElement.readyState >= 3) {
-          resolve();
-        } else {
-          videoElement.addEventListener('canplay', resolve, { once: true });
-        }
-      };
-      checkCanPlay();
-    });
-
     try {
-      // Wait for video to be ready to play
-      await Promise.race([
-        canPlayPromise,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Video load timeout')), 30000)
-        ),
-      ]);
+      // Reset video state completely
+      videoElement.pause();
+      videoElement.currentTime = 0;
 
-      // Hide loader once video is ready
+      // Reset source to force reload
+      const source = videoElement.querySelector('source');
+      if (source) {
+        const currentSrc = source.src;
+        source.src = '';
+        videoElement.load();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        source.src = currentSrc;
+        videoElement.load();
+      }
+
+      // Set up video properties
+      videoElement.setAttribute('data-autoplay', 'true');
+      videoElement.removeAttribute('muted');
+      videoElement.playsInline = true;
+      videoElement.loop = true;
+      videoElement.volume = 1;
+
+      // Create a promise that resolves when video is ready
+      await new Promise((resolve) => {
+        const loadHandler = () => {
+          videoElement.removeEventListener('loadeddata', loadHandler);
+          videoElement.removeEventListener('error', errorHandler);
+          resolve(undefined);
+        };
+
+        const errorHandler = (error) => {
+          videoElement.removeEventListener('loadeddata', loadHandler);
+          videoElement.removeEventListener('error', errorHandler);
+          console.warn('Video load error:', error);
+          resolve(undefined);
+        };
+
+        videoElement.addEventListener('loadeddata', loadHandler);
+        videoElement.addEventListener('error', errorHandler);
+
+        // If video is already loaded
+        if (videoElement.readyState >= 3) {
+          loadHandler();
+        }
+      });
+
+      // Hide loader
       if (loaderElement) {
         loaderElement.classList.remove('is-loading');
       }
 
+      // Ensure we start from beginning and play
+      videoElement.currentTime = 0;
       await videoElement.play();
     } catch (error) {
-      console.warn('Play failed:', error);
-      // Hide loader on error
+      console.warn('Video initialization failed:', error);
       if (loaderElement) {
         loaderElement.classList.remove('is-loading');
       }

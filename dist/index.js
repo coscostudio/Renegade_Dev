@@ -10301,37 +10301,51 @@
         console.warn("Invalid video element provided:", videoElement);
         return;
       }
-      videoElement.setAttribute("data-autoplay", "true");
-      videoElement.removeAttribute("muted");
-      videoElement.playsInline = true;
-      videoElement.loop = true;
-      videoElement.volume = 1;
       if (loaderElement) {
         loaderElement.classList.add("is-loading");
       }
-      const canPlayPromise = new Promise((resolve) => {
-        const checkCanPlay = () => {
-          if (videoElement.readyState >= 3) {
-            resolve();
-          } else {
-            videoElement.addEventListener("canplay", resolve, { once: true });
-          }
-        };
-        checkCanPlay();
-      });
       try {
-        await Promise.race([
-          canPlayPromise,
-          new Promise(
-            (_, reject) => setTimeout(() => reject(new Error("Video load timeout")), 3e4)
-          )
-        ]);
+        videoElement.pause();
+        videoElement.currentTime = 0;
+        const source = videoElement.querySelector("source");
+        if (source) {
+          const currentSrc = source.src;
+          source.src = "";
+          videoElement.load();
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          source.src = currentSrc;
+          videoElement.load();
+        }
+        videoElement.setAttribute("data-autoplay", "true");
+        videoElement.removeAttribute("muted");
+        videoElement.playsInline = true;
+        videoElement.loop = true;
+        videoElement.volume = 1;
+        await new Promise((resolve) => {
+          const loadHandler = () => {
+            videoElement.removeEventListener("loadeddata", loadHandler);
+            videoElement.removeEventListener("error", errorHandler);
+            resolve(void 0);
+          };
+          const errorHandler = (error) => {
+            videoElement.removeEventListener("loadeddata", loadHandler);
+            videoElement.removeEventListener("error", errorHandler);
+            console.warn("Video load error:", error);
+            resolve(void 0);
+          };
+          videoElement.addEventListener("loadeddata", loadHandler);
+          videoElement.addEventListener("error", errorHandler);
+          if (videoElement.readyState >= 3) {
+            loadHandler();
+          }
+        });
         if (loaderElement) {
           loaderElement.classList.remove("is-loading");
         }
+        videoElement.currentTime = 0;
         await videoElement.play();
       } catch (error) {
-        console.warn("Play failed:", error);
+        console.warn("Video initialization failed:", error);
         if (loaderElement) {
           loaderElement.classList.remove("is-loading");
         }
