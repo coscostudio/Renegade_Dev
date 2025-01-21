@@ -1,4 +1,4 @@
-import { videoCacheManager } from '../video/cacheManager';
+import { videoCacheManager } from './cacheManager';
 
 export async function initializeVideo(container: Element, isPreloader: boolean = false) {
   const videos = container.querySelectorAll('video');

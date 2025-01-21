@@ -35,7 +35,7 @@ export class WebGLGrid {
   private multiplier = 2.5;
   private viewportCenter = { x: 0, y: 0 };
   private maxScale = 18;
-  private minScale = 0.7;
+  private minScale = 0.6;
   private maxImageWidth = 0.6;
   private boundEvents: BoundEvents;
   private lastFrameItems: Map<string, GridItem> = new Map();
@@ -47,19 +47,56 @@ export class WebGLGrid {
     y: 0,
   };
 
+  private isTabletViewport(): boolean {
+    const { width } = this.gl.canvas.getBoundingClientRect();
+    return width > 768 && width <= 1024;
+  }
+
+  private isMobileViewport(): boolean {
+    const { width } = this.gl.canvas.getBoundingClientRect();
+    return width <= 768 || 'ontouchstart' in window;
+  }
+
+  private createImageSequence(imageCount: number, columnsPerGrid: number): number[] {
+    // Calculate exact grid needs
+    const rowsNeeded = Math.ceil(imageCount / columnsPerGrid);
+    const totalCells = rowsNeeded * columnsPerGrid;
+
+    // Create initial sequence and shuffle it
+    const sequence = Array.from({ length: imageCount }, (_, i) => i);
+    // Fisher-Yates shuffle with fixed seed for consistency
+    const seed = 12345; // Fixed seed ensures same sequence each time
+    let currentIndex = sequence.length;
+    let randomIndex;
+
+    while (currentIndex !== 0) {
+      // Generate deterministic random number
+      randomIndex = Math.floor((Math.sin(seed * currentIndex) * 10000) % currentIndex);
+      currentIndex--;
+
+      [sequence[currentIndex], sequence[randomIndex]] = [
+        sequence[randomIndex],
+        sequence[currentIndex],
+      ];
+    }
+
+    // Fill remaining cells with shuffled sequence
+    const baseSequence = [...sequence];
+    while (sequence.length < totalCells) {
+      sequence.push(...baseSequence);
+    }
+
+    // Trim to exact grid size
+    return sequence.slice(0, totalCells);
+  }
+
   private getResponsiveZoomLevels(): number[] {
-    const { width: screenWidth } = this.gl.canvas.getBoundingClientRect();
+    const isMobile = this.isMobileViewport();
+    const isTablet = this.isTabletViewport();
 
-    const isMobile = screenWidth <= 768;
-    const isTablet = screenWidth > 768 && screenWidth <= 1024;
-
-    if (isMobile) {
-      return [1, 1.5, 3, 6, 10, 14, 18];
-    }
-    if (isTablet) {
-      return [0.7, 1.25, 2.5, 5, 8, 12];
-    }
-    return [0.7, 1, 3, 6, 8];
+    if (isMobile) return [1, 2, 5, 9, 18];
+    if (isTablet) return [0.9, 1.5, 3.75, 7.5, 15];
+    return [0.6, 1, 3, 6, 12];
   }
 
   private getResponsiveMaxScale(): number {
@@ -124,7 +161,13 @@ export class WebGLGrid {
 
     this.setupWebGL();
     this.bindEvents(canvas);
+    this.initMultiplier(); // Add here
     this.updateViewportCenter();
+  }
+
+  private initMultiplier(): void {
+    const { width } = this.gl.canvas.getBoundingClientRect();
+    this.multiplier = width <= 768 || 'ontouchstart' in window ? 4.5 : 2.5;
   }
 
   private updateCanvasSize(canvas: HTMLCanvasElement): void {
@@ -436,37 +479,58 @@ export class WebGLGrid {
     };
   }
 
+  private createBaseGrid(imageCount: number, columnsPerGrid: number): number[] {
+    const sequence = Array.from({ length: imageCount }, (_, i) => i);
+    // Fisher-Yates shuffle with Math.random()
+    for (let i = sequence.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [sequence[i], sequence[j]] = [sequence[j], sequence[i]];
+    }
+    return sequence;
+  }
+
   private setupGrid(options: GridOptions): void {
     this.calculateGridDimensions(options);
-
     this.gridItems = [];
-    let index = 0;
+
+    const baseColumns = this.dimensions.columnCount;
+    const baseRows = Math.ceil(this.images.length / baseColumns);
+    const baseGridPattern = this.createBaseGrid(this.images.length, baseColumns);
 
     const startCol = Math.floor(-this.dimensions.columnCount / 2);
     const startRow = Math.floor(-this.dimensions.rowCount / 2);
-
     const cellWidth = this.dimensions.itemWidth + this.dimensions.padding;
     const cellHeight = this.dimensions.itemHeight + this.dimensions.padding;
 
     for (let row = startRow; row <= startRow + this.dimensions.rowCount; row++) {
       for (let col = startCol; col <= startCol + this.dimensions.columnCount; col++) {
-        const imageIndex = index % this.images.length;
+        const wrappedRow = ((row % baseRows) + baseRows) % baseRows;
+        const wrappedCol = ((col % baseColumns) + baseColumns) % baseColumns;
+        const baseIndex = (wrappedRow * baseColumns + wrappedCol) % this.images.length;
+
         this.gridItems.push({
           x: col * cellWidth,
           y: row * cellHeight,
           width: this.dimensions.itemWidth,
           height: this.dimensions.itemHeight,
-          imageIndex: Math.abs(imageIndex),
+          imageIndex: baseGridPattern[baseIndex],
           opacity: 1,
           velocity: { x: 0, y: 0 },
         });
-        index++;
       }
     }
 
     const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
+    const isMobile = this.isMobileViewport();
+    const isTablet = this.isTabletViewport();
+
+    let initialScale;
+    if (isMobile) initialScale = 2;
+    else if (isTablet) initialScale = 1.5;
+    else initialScale = 1;
+
     this.viewTransform = {
-      scale: 1,
+      scale: initialScale,
       x: canvasWidth / 2,
       y: canvasHeight / 2,
     };
@@ -476,32 +540,31 @@ export class WebGLGrid {
     const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
     const viewScale = this.viewTransform.scale;
 
-    const bufferFactor = Math.max(1.5, viewScale > 4 ? 2 : 1.5);
+    let bufferFactor;
+    if (viewScale >= 14) bufferFactor = 4;
+    else if (viewScale >= 9) bufferFactor = 3;
+    else if (viewScale >= 4) bufferFactor = 2;
+    else if (viewScale <= 0.5) bufferFactor = 6;
+    else bufferFactor = 1.5;
+
     const visibleWidth = (canvasWidth / viewScale) * bufferFactor;
     const visibleHeight = (canvasHeight / viewScale) * bufferFactor;
 
     const worldCenterX = -this.viewTransform.x / viewScale + canvasWidth / 2 / viewScale;
     const worldCenterY = -this.viewTransform.y / viewScale + canvasHeight / 2 / viewScale;
 
-    const wrappedItems = new Set<GridItem>();
+    const gridWidth = this.dimensions.totalWidth;
+    const gridHeight = this.dimensions.totalHeight;
 
     this.gridItems.forEach((item) => {
-      if (wrappedItems.has(item)) return;
-
       const relativeX = item.x - worldCenterX;
       const relativeY = item.y - worldCenterY;
 
-      if (Math.abs(relativeX) > visibleWidth / 2) {
-        const wrapX = Math.sign(relativeX) * -1 * this.dimensions.totalWidth;
-        item.x += wrapX;
-        wrappedItems.add(item);
-      }
+      const wrapX = Math.floor((relativeX + visibleWidth / 2) / gridWidth);
+      const wrapY = Math.floor((relativeY + visibleHeight / 2) / gridHeight);
 
-      if (Math.abs(relativeY) > visibleHeight / 2) {
-        const wrapY = Math.sign(relativeY) * -1 * this.dimensions.totalHeight;
-        item.y += wrapY;
-        wrappedItems.add(item);
-      }
+      if (wrapX !== 0) item.x -= wrapX * gridWidth;
+      if (wrapY !== 0) item.y -= wrapY * gridHeight;
     });
 
     if (viewScale > 4) {
@@ -513,17 +576,10 @@ export class WebGLGrid {
   public setZoom(factor: number, originX?: number, originY?: number): void {
     const canvas = this.gl.canvas as HTMLCanvasElement;
     const rect = canvas.getBoundingClientRect();
-
     const zoomLevels = this.getResponsiveZoomLevels();
-    const maxScale = zoomLevels[zoomLevels.length - 1];
 
-    if (this.viewTransform.scale >= maxScale && factor > 1) {
-      return;
-    }
-
-    if (this.viewTransform.scale <= zoomLevels[0] && factor < 1) {
-      return;
-    }
+    if (this.viewTransform.scale >= zoomLevels[zoomLevels.length - 1] && factor > 1) return;
+    if (this.viewTransform.scale <= zoomLevels[0] && factor < 1) return;
 
     const pixelRatio = window.devicePixelRatio;
     const centerX = (rect.width * pixelRatio) / 2;
@@ -539,17 +595,14 @@ export class WebGLGrid {
     const newX = centerX - worldCenterX * newScale;
     const newY = centerY - worldCenterY * newScale;
 
-    // Cancel any existing zoom animation
     if (this.zoomAnimation) {
       this.zoomAnimation.kill();
     }
 
-    // Set zooming flag and update targets
     this.isZooming = true;
     this.targetX = newX;
     this.targetY = newY;
 
-    // Create new zoom animation
     this.zoomAnimation = gsap.to(this.viewTransform, {
       scale: newScale,
       x: newX,
@@ -562,12 +615,8 @@ export class WebGLGrid {
       onComplete: () => {
         this.isZooming = false;
         this.zoomAnimation = null;
-
-        // Ensure targets are synced with final position
         this.targetX = this.viewTransform.x;
         this.targetY = this.viewTransform.y;
-
-        // Reset momentum
         this.momentum = { x: 0, y: 0 };
       },
     });

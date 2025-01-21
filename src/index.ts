@@ -407,13 +407,22 @@ function loadAutoVideo(): void {
 
 function initializeAccordion() {
   async function initializeAndPlayVideo(videoElement) {
-    if (!videoElement) return;
-    videoElement.setAttribute('data-autoplay', 'true'); // Add this line
-    videoElement.muted = false; // Unmute
+    if (!videoElement || !(videoElement instanceof HTMLVideoElement)) {
+      console.warn('Invalid video element provided:', videoElement);
+      return;
+    }
+
+    videoElement.setAttribute('data-autoplay', 'true');
+    videoElement.removeAttribute('muted');
     videoElement.playsInline = true;
     videoElement.loop = true;
-    videoElement.play().catch(console.warn);
-    initializeVideo(videoElement);
+    videoElement.volume = 1;
+
+    try {
+      await videoElement.play();
+    } catch (error) {
+      console.warn('Play failed:', error);
+    }
   }
 
   const accordion = (function () {
@@ -429,9 +438,15 @@ function initializeAccordion() {
     }
 
     function resetVideo(videoElement) {
-      if (videoElement && videoElement.tagName === 'VIDEO') {
+      console.log('Resetting video');
+      if (videoElement && videoElement instanceof HTMLVideoElement) {
+        console.log('Valid video element found:', videoElement);
         videoElement.pause();
         videoElement.currentTime = 0;
+        videoElement.load();
+        console.log('Video reset to:', videoElement.currentTime);
+      } else {
+        console.warn('Invalid video element:', videoElement);
       }
     }
 
@@ -463,7 +478,7 @@ function initializeAccordion() {
       },
       toggle($clicked) {
         const accordionBody = $clicked.find('.js-accordion-body')[0];
-        const videoElement = $clicked.find('.event-video')[0];
+        const videoElement = $clicked.find('event-video')[0];
         const accordionHeader = $clicked.find('.js-accordion-header')[0];
         const isOpening = !$clicked.hasClass('active');
         let resizeObserver;
