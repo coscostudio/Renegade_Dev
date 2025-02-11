@@ -8976,6 +8976,82 @@
   // src/components/WebGLGrid/ArchiveView.ts
   init_live_reload();
 
+  // src/components/WebGLGrid/s3ImageLoader.ts
+  init_live_reload();
+  var S3ImageLoader = class _S3ImageLoader {
+    constructor(config3) {
+      this.imageCache = /* @__PURE__ */ new Map();
+      this.config = config3;
+    }
+    static getInstance(config3) {
+      if (!_S3ImageLoader.instance) {
+        _S3ImageLoader.instance = new _S3ImageLoader(config3);
+      }
+      return _S3ImageLoader.instance;
+    }
+    async loadImagesFromBucket() {
+      try {
+        const prefix = this.config.prefix ? this.config.prefix.endsWith("/") ? this.config.prefix : `${this.config.prefix}/` : "";
+        console.log("Using prefix:", prefix);
+        const baseUrl = this.config.bucketUrl.endsWith("/") ? this.config.bucketUrl.slice(0, -1) : this.config.bucketUrl;
+        console.log("Using base URL:", baseUrl);
+        const listUrl = `${baseUrl}?list-type=2&prefix=${prefix}&delimiter=/`;
+        console.log("Fetching from:", listUrl);
+        const response = await fetch(listUrl, {
+          method: "GET",
+          mode: "cors",
+          headers: {
+            Accept: "*/*"
+          }
+        });
+        console.log("S3 Response:", {
+          status: response.status,
+          statusText: response.statusText,
+          headers: Object.fromEntries(response.headers)
+        });
+        const xmlText = await response.text();
+        console.log("Raw XML response:", xmlText);
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+        const contents = xmlDoc.getElementsByTagName("Contents");
+        console.log("Found Contents nodes:", contents.length);
+        const keys = Array.from(contents).map((content) => content.getElementsByTagName("Key")[0]?.textContent).filter((key) => key && /\.(jpg|jpeg|png|webp)$/i.test(key)).filter(Boolean);
+        console.log("Found S3 keys:", keys);
+        const urls = keys.map((key) => `${baseUrl}/${key}`);
+        console.log("Generated image URLs:", urls);
+        return urls;
+      } catch (error) {
+        console.error("Failed to load images from S3:", error);
+        return [];
+      }
+    }
+    async preloadImages(urls) {
+      const promises = urls.map((url) => this.loadImage(url));
+      await Promise.all(promises);
+    }
+    async loadImage(url) {
+      if (this.imageCache.has(url))
+        return;
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          this.imageCache.set(url, url);
+          resolve();
+        };
+        img.onerror = () => {
+          console.error(`Failed to load image: ${url}`);
+          resolve();
+        };
+        img.src = url;
+      });
+    }
+    cleanup() {
+      this.imageCache.clear();
+    }
+  };
+  var initS3ImageLoader = (config3) => S3ImageLoader.getInstance(config3);
+
   // src/components/WebGLGrid/WebGLGrid.ts
   init_live_reload();
 
@@ -9610,12 +9686,30 @@
         this.grid.resize(rect.width, rect.height);
       };
       this.container = container;
-      const imageElements = Array.from(container.querySelectorAll(".cms-image"));
-      this.images = imageElements.map((img) => img.src);
-      gsapWithCSS.set(container, { autoAlpha: 0 });
+      console.log("ArchiveView initialized with container:", container);
+      const firstImage = container.querySelector(".cms-image");
+      if (!firstImage) {
+        console.error(
+          "No .cms-image elements found in container. Container HTML:",
+          container.innerHTML
+        );
+        return;
+      }
+      console.log("Found CMS Image element:", firstImage);
+      console.log("Image data attributes:", {
+        bucket: firstImage.dataset.s3Bucket,
+        prefix: firstImage.dataset.s3Prefix,
+        color: firstImage.dataset.color
+      });
+      this.s3Config = {
+        bucketUrl: firstImage.dataset.s3Bucket || "",
+        prefix: firstImage.dataset.s3Prefix || ""
+      };
       this.setupStyles();
       this.setupViewportDetection();
       this.createZoomUI();
+      gsapWithCSS.set(container, { autoAlpha: 0 });
+      console.log("Stored S3 config:", this.s3Config);
     }
     setupViewportDetection() {
       const viewportUnitsSupported = CSS.supports("height", "100svh");
@@ -9812,28 +9906,44 @@
       };
       this.grid.setZoom(factor, center.x, center.y);
     }
+    // In ArchiveView.ts, keep only this version of init()
     async init() {
       try {
+        console.log("ArchiveView init started");
         this.isTransitioning = true;
+        if (!this.s3Config.bucketUrl) {
+          throw new Error("No S3 bucket URL provided");
+        }
+        console.log("Loading images from S3...");
+        const s3Loader = initS3ImageLoader(this.s3Config);
+        this.images = await s3Loader.loadImagesFromBucket();
+        console.log("Loaded URLs:", this.images);
+        console.log("Initializing container");
         await this.initializeContainer();
+        console.log("Initializing grid with image count:", this.images.length);
         await this.initializeGrid();
+        console.log("Setting up resize observer");
         this.setupResizeObserver();
         this.isTransitioning = false;
+        console.log("ArchiveView init completed");
       } catch (error) {
         console.error("Failed to initialize archive view:", error);
         throw error;
       }
     }
     async initializeContainer() {
-      let archiveContainer = this.container.querySelector(".archive-container");
+      let archiveContainer = this.container.querySelector("#archive-container");
       if (!archiveContainer) {
         archiveContainer = document.createElement("div");
+        archiveContainer.id = "archive-container";
         archiveContainer.className = "archive-container";
         this.container.appendChild(archiveContainer);
       }
-      this.canvas = document.createElement("canvas");
-      this.canvas.className = "archive-canvas";
-      archiveContainer.appendChild(this.canvas);
+      if (!this.canvas) {
+        this.canvas = document.createElement("canvas");
+        this.canvas.className = "archive-canvas";
+        archiveContainer.appendChild(this.canvas);
+      }
     }
     async initializeGrid() {
       if (!this.canvas)
@@ -9865,6 +9975,11 @@
       };
     }
     show() {
+      console.log("Show method called", {
+        hasCanvas: !!this.canvas,
+        hasGrid: !!this.grid,
+        zoomUI: !!this.zoomUI
+      });
       if (!this.canvas || !this.grid) {
         console.error("Show called but canvas or grid is missing");
         return;
@@ -9879,7 +9994,8 @@
         defaults: {
           duration: 1,
           ease: "power2.inOut"
-        }
+        },
+        onComplete: () => console.log("Show animation completed")
       });
       tl.to([this.canvas, this.zoomUI], {
         autoAlpha: 1,
@@ -10766,17 +10882,25 @@
         },
         async afterEnter(data) {
           try {
+            console.log("Archive afterEnter started");
             gsapWithCSS.set(data.next.container, { autoAlpha: 0 });
             await new Promise((resolve) => setTimeout(resolve, 100));
+            console.log("Creating ArchiveView");
             const archiveView = new ArchiveView(data.next.container);
+            console.log("Initializing ArchiveView");
             await archiveView.init();
             window.archiveView = archiveView;
             const initStyles = document.getElementById("archive-init-styles");
-            if (initStyles)
+            if (initStyles) {
+              console.log("Removing init styles");
               initStyles.remove();
+            }
+            console.log("Setting container autoAlpha");
             gsapWithCSS.set(data.next.container, { autoAlpha: 1 });
+            console.log("Calling show()");
             archiveView.show();
           } catch (error) {
+            console.error("Error in afterEnter:", error);
           }
         },
         beforeLeave() {

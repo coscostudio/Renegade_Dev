@@ -973,22 +973,35 @@ barba.init({
 
       async afterEnter(data) {
         try {
+          console.log('Archive afterEnter started');
           gsap.set(data.next.container, { autoAlpha: 0 });
 
           await new Promise((resolve) => setTimeout(resolve, 100));
 
+          // Create and initialize ArchiveView
+          console.log('Creating ArchiveView');
           const archiveView = new ArchiveView(data.next.container);
+
+          console.log('Initializing ArchiveView');
           await archiveView.init();
 
           (window as any).archiveView = archiveView;
 
+          // Remove init styles
           const initStyles = document.getElementById('archive-init-styles');
-          if (initStyles) initStyles.remove();
+          if (initStyles) {
+            console.log('Removing init styles');
+            initStyles.remove();
+          }
 
+          // Show the view
+          console.log('Setting container autoAlpha');
           gsap.set(data.next.container, { autoAlpha: 1 });
+
+          console.log('Calling show()');
           archiveView.show();
         } catch (error) {
-          // Error handling without console.error
+          console.error('Error in afterEnter:', error);
         }
       },
 

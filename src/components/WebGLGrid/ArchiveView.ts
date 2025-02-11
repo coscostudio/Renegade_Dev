@@ -1,5 +1,6 @@
 import { gsap } from 'gsap';
 
+import { initS3ImageLoader } from './s3ImageLoader';
 import { WebGLGrid } from './WebGLGrid';
 
 export class ArchiveView {
@@ -14,15 +15,41 @@ export class ArchiveView {
 
   constructor(container: HTMLElement) {
     this.container = container;
-    const imageElements = Array.from(container.querySelectorAll('.cms-image'));
-    this.images = imageElements.map((img) => (img as HTMLImageElement).src);
+    console.log('ArchiveView initialized with container:', container);
+
+    // Update selector to find image anywhere in container
+    const firstImage = container.querySelector('.cms-image') as HTMLImageElement;
+    if (!firstImage) {
+      console.error(
+        'No .cms-image elements found in container. Container HTML:',
+        container.innerHTML
+      );
+      return;
+    }
+
+    // Debug log for CMS image and config
+    console.log('Found CMS Image element:', firstImage);
+    console.log('Image data attributes:', {
+      bucket: firstImage.dataset.s3Bucket,
+      prefix: firstImage.dataset.s3Prefix,
+      color: firstImage.dataset.color,
+    });
+
+    // Store config for later use in init()
+    this.s3Config = {
+      bucketUrl: firstImage.dataset.s3Bucket || '',
+      prefix: firstImage.dataset.s3Prefix || '',
+    };
+
+    // Do synchronous setup immediately
+    this.setupStyles();
+    this.setupViewportDetection();
+    this.createZoomUI();
 
     // Start with everything hidden
     gsap.set(container, { autoAlpha: 0 });
 
-    this.setupStyles();
-    this.setupViewportDetection();
-    this.createZoomUI();
+    console.log('Stored S3 config:', this.s3Config);
   }
 
   private setupViewportDetection(): void {
@@ -245,13 +272,33 @@ export class ArchiveView {
     this.grid.setZoom(factor, center.x, center.y);
   }
 
+  // In ArchiveView.ts, keep only this version of init()
   public async init(): Promise<void> {
     try {
+      console.log('ArchiveView init started');
       this.isTransitioning = true;
+
+      if (!this.s3Config.bucketUrl) {
+        throw new Error('No S3 bucket URL provided');
+      }
+
+      // Load images first
+      console.log('Loading images from S3...');
+      const s3Loader = initS3ImageLoader(this.s3Config);
+      this.images = await s3Loader.loadImagesFromBucket();
+      console.log('Loaded URLs:', this.images);
+
+      console.log('Initializing container');
       await this.initializeContainer();
+
+      console.log('Initializing grid with image count:', this.images.length);
       await this.initializeGrid();
+
+      console.log('Setting up resize observer');
       this.setupResizeObserver();
+
       this.isTransitioning = false;
+      console.log('ArchiveView init completed');
     } catch (error) {
       console.error('Failed to initialize archive view:', error);
       throw error;
@@ -259,16 +306,20 @@ export class ArchiveView {
   }
 
   private async initializeContainer(): Promise<void> {
-    let archiveContainer = this.container.querySelector('.archive-container');
+    let archiveContainer = this.container.querySelector('#archive-container');
     if (!archiveContainer) {
       archiveContainer = document.createElement('div');
+      archiveContainer.id = 'archive-container';
       archiveContainer.className = 'archive-container';
       this.container.appendChild(archiveContainer);
     }
 
-    this.canvas = document.createElement('canvas');
-    this.canvas.className = 'archive-canvas';
-    archiveContainer.appendChild(this.canvas);
+    // Create canvas if it doesn't exist
+    if (!this.canvas) {
+      this.canvas = document.createElement('canvas');
+      this.canvas.className = 'archive-canvas';
+      archiveContainer.appendChild(this.canvas);
+    }
   }
 
   private async initializeGrid(): Promise<void> {
@@ -312,6 +363,12 @@ export class ArchiveView {
   }
 
   public show(): void {
+    console.log('Show method called', {
+      hasCanvas: !!this.canvas,
+      hasGrid: !!this.grid,
+      zoomUI: !!this.zoomUI,
+    });
+
     if (!this.canvas || !this.grid) {
       console.error('Show called but canvas or grid is missing');
       return;
@@ -332,6 +389,7 @@ export class ArchiveView {
         duration: 1,
         ease: 'power2.inOut',
       },
+      onComplete: () => console.log('Show animation completed'),
     });
 
     // Fade in both elements together
