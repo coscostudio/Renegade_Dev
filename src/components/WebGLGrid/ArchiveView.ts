@@ -93,7 +93,7 @@ export class ArchiveView {
         height: 100vh; /* Fallback */
         height: 100svh; /* Small viewport height */
         overflow: hidden;
-        background: #000;
+        background: #0f0f0f;
         z-index: 1;
       }
 

@@ -224,7 +224,7 @@ export class WebGLGrid {
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
 
-    gl.clearColor(0.059, 0.059, 0.059, 0);
+    gl.clearColor(0.059, 0.059, 0.059, 1);
   }
 
   private createShader(source: string, type: number): WebGLShader {

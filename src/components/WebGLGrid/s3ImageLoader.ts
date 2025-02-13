@@ -19,6 +19,20 @@ class S3ImageLoader {
     return S3ImageLoader.instance;
   }
 
+  private async preloadBatch(urls: string[], batchSize = 10): Promise<void> {
+    const batches = [];
+    for (let i = 0; i < urls.length; i += batchSize) {
+      batches.push(urls.slice(i, i + batchSize));
+    }
+
+    // Process batches sequentially to avoid overwhelming the browser
+    return batches.reduce(async (promise, batch) => {
+      await promise; // Wait for previous batch
+      console.log(`Loading batch of ${batch.length} images...`);
+      return Promise.all(batch.map((url) => this.loadImage(url)));
+    }, Promise.resolve());
+  }
+
   async loadImagesFromBucket(): Promise<string[]> {
     try {
       const prefix = this.config.prefix
@@ -35,7 +49,6 @@ class S3ImageLoader {
 
       console.log('Using base URL:', baseUrl);
 
-      // Build list request URL correctly
       const listUrl = `${baseUrl}?list-type=2&prefix=${prefix}&delimiter=/`;
       console.log('Fetching from:', listUrl);
 
@@ -53,17 +66,17 @@ class S3ImageLoader {
         headers: Object.fromEntries(response.headers),
       });
 
-      const xmlText = await response.text();
-      console.log('Raw XML response:', xmlText);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
+      const xmlText = await response.text();
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
 
-      // Get all Contents nodes
       const contents = xmlDoc.getElementsByTagName('Contents');
       console.log('Found Contents nodes:', contents.length);
 
-      // Extract keys from Contents
       const keys = Array.from(contents)
         .map((content) => content.getElementsByTagName('Key')[0]?.textContent)
         .filter((key) => key && /\.(jpg|jpeg|png|webp)$/i.test(key))
@@ -71,9 +84,11 @@ class S3ImageLoader {
 
       console.log('Found S3 keys:', keys);
 
-      // Build full URLs
       const urls = keys.map((key) => `${baseUrl}/${key}`);
       console.log('Generated image URLs:', urls);
+
+      // Start preloading immediately but don't wait for it
+      this.preloadBatch(urls).catch(console.error);
 
       return urls;
     } catch (error) {
@@ -82,18 +97,14 @@ class S3ImageLoader {
     }
   }
 
-  async preloadImages(urls: string[]): Promise<void> {
-    const promises = urls.map((url) => this.loadImage(url));
-    await Promise.all(promises);
-  }
-
   private async loadImage(url: string): Promise<void> {
     if (this.imageCache.has(url)) return;
 
     return new Promise((resolve) => {
       const img = new Image();
-      img.crossOrigin = 'anonymous'; // Important for WebGL textures
+      img.crossOrigin = 'anonymous';
       img.onload = () => {
+        console.log(`Successfully loaded: ${url}`);
         this.imageCache.set(url, url);
         resolve();
       };

@@ -8989,6 +8989,17 @@
       }
       return _S3ImageLoader.instance;
     }
+    async preloadBatch(urls, batchSize = 10) {
+      const batches = [];
+      for (let i = 0; i < urls.length; i += batchSize) {
+        batches.push(urls.slice(i, i + batchSize));
+      }
+      return batches.reduce(async (promise, batch) => {
+        await promise;
+        console.log(`Loading batch of ${batch.length} images...`);
+        return Promise.all(batch.map((url) => this.loadImage(url)));
+      }, Promise.resolve());
+    }
     async loadImagesFromBucket() {
       try {
         const prefix = this.config.prefix ? this.config.prefix.endsWith("/") ? this.config.prefix : `${this.config.prefix}/` : "";
@@ -9009,8 +9020,10 @@
           statusText: response.statusText,
           headers: Object.fromEntries(response.headers)
         });
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const xmlText = await response.text();
-        console.log("Raw XML response:", xmlText);
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlText, "text/xml");
         const contents = xmlDoc.getElementsByTagName("Contents");
@@ -9019,15 +9032,12 @@
         console.log("Found S3 keys:", keys);
         const urls = keys.map((key) => `${baseUrl}/${key}`);
         console.log("Generated image URLs:", urls);
+        this.preloadBatch(urls).catch(console.error);
         return urls;
       } catch (error) {
         console.error("Failed to load images from S3:", error);
         return [];
       }
-    }
-    async preloadImages(urls) {
-      const promises = urls.map((url) => this.loadImage(url));
-      await Promise.all(promises);
     }
     async loadImage(url) {
       if (this.imageCache.has(url))
@@ -9036,6 +9046,7 @@
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.onload = () => {
+          console.log(`Successfully loaded: ${url}`);
           this.imageCache.set(url, url);
           resolve();
         };
@@ -9235,7 +9246,7 @@
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
       gl.enable(gl.DEPTH_TEST);
       gl.depthFunc(gl.LEQUAL);
-      gl.clearColor(0.059, 0.059, 0.059, 0);
+      gl.clearColor(0.059, 0.059, 0.059, 1);
     }
     createShader(source, type) {
       const shader = this.gl.createShader(type);
@@ -9742,7 +9753,7 @@
         height: 100vh; /* Fallback */
         height: 100svh; /* Small viewport height */
         overflow: hidden;
-        background: #000;
+        background: #0f0f0f;
         z-index: 1;
       }
 
