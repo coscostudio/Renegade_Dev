@@ -9412,8 +9412,9 @@
       const itemWidth = Math.min(maxItemWidth, canvasWidth / (options.columnCount + 1));
       const itemHeight = itemWidth * 0.75;
       const padding = itemWidth * 0.6;
-      const minColumns = Math.ceil(canvasWidth / (itemWidth + padding)) + 8;
-      const minRows = Math.ceil(canvasHeight / (itemHeight + padding)) + 8;
+      const zoomBuffer = 12;
+      const minColumns = Math.ceil(canvasWidth / (itemWidth + padding)) + zoomBuffer;
+      const minRows = Math.ceil(canvasHeight / (itemHeight + padding)) + zoomBuffer;
       this.dimensions = {
         itemWidth,
         itemHeight,
