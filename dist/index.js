@@ -9148,27 +9148,6 @@
       const { width } = this.gl.canvas.getBoundingClientRect();
       return width <= 768 || "ontouchstart" in window;
     }
-    createImageSequence(imageCount, columnsPerGrid) {
-      const rowsNeeded = Math.ceil(imageCount / columnsPerGrid);
-      const totalCells = rowsNeeded * columnsPerGrid;
-      const sequence = Array.from({ length: imageCount }, (_, i) => i);
-      const seed = 12345;
-      let currentIndex = sequence.length;
-      let randomIndex;
-      while (currentIndex !== 0) {
-        randomIndex = Math.floor(Math.sin(seed * currentIndex) * 1e4 % currentIndex);
-        currentIndex--;
-        [sequence[currentIndex], sequence[randomIndex]] = [
-          sequence[randomIndex],
-          sequence[currentIndex]
-        ];
-      }
-      const baseSequence = [...sequence];
-      while (sequence.length < totalCells) {
-        sequence.push(...baseSequence);
-      }
-      return sequence.slice(0, totalCells);
-    }
     getResponsiveZoomLevels() {
       const isMobile = this.isMobileViewport();
       const isTablet = this.isTabletViewport();
@@ -9453,48 +9432,6 @@
       }
       return sequence;
     }
-    setupGrid(options) {
-      this.calculateGridDimensions(options);
-      this.gridItems = [];
-      const baseColumns = this.dimensions.columnCount;
-      const baseRows = Math.ceil(this.images.length / baseColumns);
-      const baseGridPattern = this.createBaseGrid(this.images.length, baseColumns);
-      const startCol = Math.floor(-this.dimensions.columnCount / 2);
-      const startRow = Math.floor(-this.dimensions.rowCount / 2);
-      const cellWidth = this.dimensions.itemWidth + this.dimensions.padding;
-      const cellHeight = this.dimensions.itemHeight + this.dimensions.padding;
-      for (let row = startRow; row <= startRow + this.dimensions.rowCount; row++) {
-        for (let col = startCol; col <= startCol + this.dimensions.columnCount; col++) {
-          const wrappedRow = (row % baseRows + baseRows) % baseRows;
-          const wrappedCol = (col % baseColumns + baseColumns) % baseColumns;
-          const baseIndex = (wrappedRow * baseColumns + wrappedCol) % this.images.length;
-          this.gridItems.push({
-            x: col * cellWidth,
-            y: row * cellHeight,
-            width: this.dimensions.itemWidth,
-            height: this.dimensions.itemHeight,
-            imageIndex: baseGridPattern[baseIndex],
-            opacity: 1,
-            velocity: { x: 0, y: 0 }
-          });
-        }
-      }
-      const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
-      const isMobile = this.isMobileViewport();
-      const isTablet = this.isTabletViewport();
-      let initialScale;
-      if (isMobile)
-        initialScale = 2;
-      else if (isTablet)
-        initialScale = 1.5;
-      else
-        initialScale = 1;
-      this.viewTransform = {
-        scale: initialScale,
-        x: canvasWidth / 2,
-        y: canvasHeight / 2
-      };
-    }
     updateGridPositions() {
       const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
       const viewScale = this.viewTransform.scale;
@@ -9529,6 +9466,50 @@
         this.momentum.x *= 0.5;
         this.momentum.y *= 0.5;
       }
+    }
+    setupGrid(options) {
+      this.calculateGridDimensions(options);
+      this.gridItems = [];
+      const baseColumns = this.dimensions.columnCount;
+      const baseRows = Math.max(
+        Math.ceil(this.images.length / baseColumns),
+        this.dimensions.rowCount
+      );
+      const baseGridPattern = this.createBaseGrid(this.images.length, baseColumns);
+      const startCol = Math.floor(-this.dimensions.columnCount / 2);
+      const startRow = Math.floor(-this.dimensions.rowCount / 2);
+      const cellWidth = this.dimensions.itemWidth + this.dimensions.padding;
+      const cellHeight = this.dimensions.itemHeight + this.dimensions.padding;
+      const occupiedPositions = /* @__PURE__ */ new Set();
+      for (let row = startRow; row <= startRow + this.dimensions.rowCount; row++) {
+        for (let col = startCol; col <= startCol + this.dimensions.columnCount; col++) {
+          const wrappedRow = (row % baseRows + baseRows) % baseRows;
+          const wrappedCol = (col % baseColumns + baseColumns) % baseColumns;
+          const baseIndex = wrappedRow * baseColumns + wrappedCol;
+          const imageIndex = baseGridPattern[baseIndex % this.images.length];
+          const x = col * cellWidth;
+          const y = row * cellHeight;
+          const posKey = `${Math.round(x)},${Math.round(y)}`;
+          if (!occupiedPositions.has(posKey)) {
+            occupiedPositions.add(posKey);
+            this.gridItems.push({
+              x,
+              y,
+              width: this.dimensions.itemWidth,
+              height: this.dimensions.itemHeight,
+              imageIndex,
+              opacity: 1,
+              velocity: { x: 0, y: 0 }
+            });
+          }
+        }
+      }
+      const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
+      this.viewTransform = {
+        scale: this.isMobileViewport() ? 2 : this.isTabletViewport() ? 1.5 : 1,
+        x: canvasWidth / 2,
+        y: canvasHeight / 2
+      };
     }
     setZoom(factor, originX, originY) {
       const canvas = this.gl.canvas;
