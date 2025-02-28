@@ -8973,406 +8973,133 @@
     await Promise.all(promises);
   }
 
-  // src/components/ArchiveView/index.ts
+  // src/components/WebGLGrid/ArchiveView.ts
   init_live_reload();
 
-  // src/components/ArchiveView/ArchiveView.ts
+  // src/components/WebGLGrid/s3ImageLoader.ts
   init_live_reload();
-
-  // src/components/ArchiveGrid/index.ts
-  init_live_reload();
-
-  // src/components/ArchiveGrid/GridRenderer.ts
-  init_live_reload();
-
-  // src/components/ArchiveGrid/TextureManager.ts
-  init_live_reload();
-
-  // src/components/ArchiveGrid/types.ts
-  init_live_reload();
-
-  // src/components/ArchiveGrid/utils.ts
-  init_live_reload();
-  function detectDeviceCapabilities() {
-    const isMobile = window.innerWidth <= 768 || "ontouchstart" in window;
-    const isTablet = !isMobile && window.innerWidth <= 1024;
-    const rawPixelRatio = window.devicePixelRatio || 1;
-    const pixelRatio = isMobile ? Math.min(rawPixelRatio, 2) : rawPixelRatio;
-    const maxTextureSize = isMobile ? 1024 : isTablet ? 2048 : 4096;
-    const columnCount = isMobile ? 4 : isTablet ? 5 : 6;
-    const rowCount = isMobile ? 4 : isTablet ? 5 : 6;
-    const dragMultiplier = isMobile ? 1.5 : 1;
-    const maxConcurrentLoads = isMobile ? 2 : isTablet ? 4 : 6;
-    return {
-      isMobile,
-      pixelRatio,
-      maxTextureSize,
-      columnCount,
-      rowCount,
-      dragMultiplier,
-      maxConcurrentLoads
-    };
-  }
-  function lerp(start, end, t) {
-    t = Math.max(0, Math.min(1, t));
-    return start * (1 - t) + end * t;
-  }
-  function isPowerOf2(value) {
-    return (value & value - 1) === 0 && value !== 0;
-  }
-  function createShader(gl, source, type) {
-    const shader = gl.createShader(type);
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-      const info = gl.getShaderInfoLog(shader);
-      gl.deleteShader(shader);
-      throw new Error(`Shader compile error: ${info}`);
+  var S3ImageLoader = class _S3ImageLoader {
+    constructor(config3) {
+      this.imageCache = /* @__PURE__ */ new Map();
+      this.config = config3;
     }
-    return shader;
-  }
-  function createProgram(gl, vertShader, fragShader) {
-    const program = gl.createProgram();
-    gl.attachShader(program, vertShader);
-    gl.attachShader(program, fragShader);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      const info = gl.getProgramInfoLog(program);
-      gl.deleteProgram(program);
-      throw new Error(`Program link error: ${info}`);
+    static getInstance(config3) {
+      if (!_S3ImageLoader.instance) {
+        _S3ImageLoader.instance = new _S3ImageLoader(config3);
+      }
+      return _S3ImageLoader.instance;
     }
-    return program;
-  }
-  function resizeCanvas(canvas, pixelRatio) {
-    const displayWidth = canvas.clientWidth;
-    const displayHeight = canvas.clientHeight;
-    const needResize = canvas.width !== displayWidth * pixelRatio || canvas.height !== displayHeight * pixelRatio;
-    if (needResize) {
-      canvas.width = displayWidth * pixelRatio;
-      canvas.height = displayHeight * pixelRatio;
+    async preloadBatch(urls, batchSize = 10) {
+      const batches = [];
+      for (let i = 0; i < urls.length; i += batchSize) {
+        batches.push(urls.slice(i, i + batchSize));
+      }
+      return batches.reduce(async (promise, batch) => {
+        await promise;
+        console.log(`Loading batch of ${batch.length} images...`);
+        return Promise.all(batch.map((url) => this.loadImage(url)));
+      }, Promise.resolve());
     }
-  }
-  function stringToColor(str) {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = str.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    let color = "#";
-    for (let i = 0; i < 3; i++) {
-      const value = hash >> i * 8 & 255;
-      color += ("00" + value.toString(16)).substr(-2);
-    }
-    return color;
-  }
-  function checkWebpSupport() {
-    return new Promise((resolve) => {
-      const webpImg = new Image();
-      webpImg.onload = () => resolve(true);
-      webpImg.onerror = () => resolve(false);
-      webpImg.src = "data:image/webp;base64,UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAAAfQ//73v/+BiOh/AAA=";
-    });
-  }
-  function checkAvifSupport() {
-    return new Promise((resolve) => {
-      const avifImg = new Image();
-      avifImg.onload = () => resolve(true);
-      avifImg.onerror = () => resolve(false);
-      avifImg.src = "data:image/avif;base64,AAAAIGZ0eXBhdmlmAAAAAGF2aWZtaWYxbWlhZk1BMUIAAADybWV0YQAAAAAAAAAoaGRscgAAAAAAAAAAcGljdAAAAAAAAAAAAAAAAGxpYmF2aWYAAAAADnBpdG0AAAAAAAEAAAAeaWxvYwAAAABEAAABAAEAAAABAAABGgAAAB0AAAAoaWluZgAAAAAAAQAAABppbmZlAgAAAAABAABhdjAxQ29sb3IAAAAAamlwcnAAAABLaXBjbwAAABRpc3BlAAAAAAAAAAIAAAACAAAAEHBpeGkAAAAAAwgICAAAAAxhdjFDgQ0MAAAAABNjb2xybmNseAACAAIAAYAAAAAXaXBtYQAAAAAAAAABAAEEAQKDBAAAACVtZGF0EgAKCBgANogQEAwgMg8f8D///8WfhwB8+ErK42A=";
-    });
-  }
-
-  // src/components/ArchiveGrid/TextureManager.ts
-  var TextureManager = class {
-    constructor(gl, deviceSettings) {
-      this.textures = /* @__PURE__ */ new Map();
-      this.imageInfo = /* @__PURE__ */ new Map();
-      this.loadingQueue = [];
-      this.activeLoads = 0;
-      this.maxConcurrentLoads = 3;
-      this.supportedFormats = { webp: false, avif: false };
-      this.isFormatDetectionComplete = false;
-      this.gl = gl;
-      this.deviceSettings = deviceSettings;
-      this.maxConcurrentLoads = deviceSettings.maxConcurrentLoads;
-      this.placeholderTexture = this.createEmptyTexture("#303030");
-      this.formatDetectionPromise = this.detectSupportedFormats();
-    }
-    // Detect which image formats the browser supports
-    async detectSupportedFormats() {
+    async loadImagesFromBucket() {
       try {
-        this.supportedFormats.webp = await checkWebpSupport();
-        this.supportedFormats.avif = await checkAvifSupport();
-        console.log("Supported formats:", this.supportedFormats);
-      } catch (error) {
-        console.warn("Error detecting format support:", error);
-        this.supportedFormats.webp = false;
-        this.supportedFormats.avif = false;
-      }
-      this.isFormatDetectionComplete = true;
-    }
-    // Method to queue a texture for loading with priority
-    queueTexture(url, priority, callback, isHD = false) {
-      if (this.textures.has(url) && this.imageInfo.has(url)) {
-        const texture = this.textures.get(url);
-        const info = this.imageInfo.get(url);
-        callback(texture, info);
-        return;
-      }
-      const existingItem = this.loadingQueue.find((item) => item.url === url && item.isHD === isHD);
-      if (existingItem) {
-        if (priority < existingItem.priority) {
-          existingItem.priority = priority;
-          this.loadingQueue.sort((a, b) => a.priority - b.priority);
-        }
-        const originalCallback = existingItem.callback;
-        existingItem.callback = (texture, info) => {
-          originalCallback(texture, info);
-          callback(texture, info);
-        };
-        return;
-      }
-      this.loadingQueue.push({ url, priority, callback, isHD });
-      this.loadingQueue.sort((a, b) => a.priority - b.priority);
-      this.processQueue();
-    }
-    // Process the loading queue respecting concurrent load limits
-    async processQueue() {
-      if (!this.isFormatDetectionComplete) {
-        await this.formatDetectionPromise;
-      }
-      if (this.activeLoads >= this.maxConcurrentLoads || this.loadingQueue.length === 0) {
-        return;
-      }
-      const nextItem = this.loadingQueue.shift();
-      if (!nextItem)
-        return;
-      this.activeLoads++;
-      if (this.textures.has(nextItem.url) && this.imageInfo.has(nextItem.url)) {
-        const texture = this.textures.get(nextItem.url);
-        const info = this.imageInfo.get(nextItem.url);
-        nextItem.callback(texture, info);
-        this.activeLoads--;
-        this.processQueue();
-        return;
-      }
-      const placeholderInfo = {
-        url: nextItem.url,
-        element: null,
-        width: 1,
-        height: 1,
-        isLoaded: false,
-        isHD: nextItem.isHD,
-        color: stringToColor(nextItem.url)
-      };
-      nextItem.callback(this.placeholderTexture, placeholderInfo);
-      this.loadImage(nextItem.url, nextItem.isHD).then(({ image, imageInfo }) => {
-        const texture = this.createTexture(image, {
-          useMipmaps: !this.deviceSettings.isMobile && isPowerOf2(image.width) && isPowerOf2(image.height)
+        const prefix = this.config.prefix ? this.config.prefix.endsWith("/") ? this.config.prefix : `${this.config.prefix}/` : "";
+        console.log("Using prefix:", prefix);
+        const baseUrl = this.config.bucketUrl.endsWith("/") ? this.config.bucketUrl.slice(0, -1) : this.config.bucketUrl;
+        console.log("Using base URL:", baseUrl);
+        const listUrl = `${baseUrl}?list-type=2&prefix=${prefix}&delimiter=/`;
+        console.log("Fetching from:", listUrl);
+        const response = await fetch(listUrl, {
+          method: "GET",
+          mode: "cors",
+          headers: {
+            Accept: "*/*"
+          }
         });
-        this.textures.set(nextItem.url, texture);
-        this.imageInfo.set(nextItem.url, imageInfo);
-        nextItem.callback(texture, imageInfo);
-        if (this.deviceSettings.isMobile && this.textures.size > 50) {
-          this.cleanUpLeastRecentlyUsed(10);
+        console.log("S3 Response:", {
+          status: response.status,
+          statusText: response.statusText,
+          headers: Object.fromEntries(response.headers)
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
-      }).catch((error) => {
-        console.error(`Failed to load texture: ${nextItem.url}`, error);
-        nextItem.callback(this.placeholderTexture, placeholderInfo);
-      }).finally(() => {
-        this.activeLoads--;
-        this.processQueue();
-      });
+        const xmlText = await response.text();
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+        const contents = xmlDoc.getElementsByTagName("Contents");
+        console.log("Found Contents nodes:", contents.length);
+        const keys = Array.from(contents).map((content) => content.getElementsByTagName("Key")[0]?.textContent).filter((key) => key && /\.(jpg|jpeg|png|webp)$/i.test(key)).filter(Boolean);
+        console.log("Found S3 keys:", keys);
+        const urls = keys.map((key) => `${baseUrl}/${key}`);
+        console.log("Generated image URLs:", urls);
+        this.preloadBatch(urls).catch(console.error);
+        return urls;
+      } catch (error) {
+        console.error("Failed to load images from S3:", error);
+        return [];
+      }
     }
-    // Clean up least recently used textures for mobile devices
-    cleanUpLeastRecentlyUsed(count) {
-      const textureUrls = Array.from(this.textures.keys());
-      if (textureUrls.length <= count)
+    async loadImage(url) {
+      if (this.imageCache.has(url))
         return;
-      const toRemove = textureUrls.slice(0, count);
-      toRemove.forEach((url) => {
-        const texture = this.textures.get(url);
-        if (texture) {
-          this.gl.deleteTexture(texture);
-          this.textures.delete(url);
-          this.imageInfo.delete(url);
-        }
-      });
-      console.log(`Cleaned up ${count} textures to save memory`);
-    }
-    // Load an image and return both the image element and its info
-    async loadImage(url, isHD = false) {
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve) => {
         const img = new Image();
         img.crossOrigin = "anonymous";
-        const resizedUrl = this.getResizedImageUrl(url, isHD);
         img.onload = () => {
-          const imageInfo = {
-            url,
-            element: img,
-            width: img.naturalWidth,
-            height: img.naturalHeight,
-            isLoaded: true,
-            isHD,
-            color: stringToColor(url)
-            // Use real color extraction in production
-          };
-          resolve({ image: img, imageInfo });
+          console.log(`Successfully loaded: ${url}`);
+          this.imageCache.set(url, url);
+          resolve();
         };
         img.onerror = () => {
-          reject(new Error(`Failed to load image: ${resizedUrl}`));
+          console.error(`Failed to load image: ${url}`);
+          resolve();
         };
-        img.src = resizedUrl;
-        if (this.deviceSettings.isMobile) {
-          setTimeout(() => {
-            if (!img.complete) {
-              img.src = "";
-              reject(new Error(`Timeout loading image: ${resizedUrl}`));
-            }
-          }, 1e4);
-        }
+        img.src = url;
       });
     }
-    // Resize image URL based on device and HD settings
-    getResizedImageUrl(url, isHD) {
-      try {
-        const urlObj = new URL(url);
-        const params = new URLSearchParams(urlObj.search);
-        const sizeFactor = this.deviceSettings.pixelRatio;
-        const baseSize = isHD ? this.deviceSettings.isMobile ? 600 : 1200 : this.deviceSettings.isMobile ? 300 : 600;
-        const size = Math.round(baseSize * sizeFactor);
-        if (url.includes("fit=") || url.includes("height=") || url.includes("width=")) {
-          if (url.includes("height=") || url.includes("h=")) {
-            params.set("h", String(Math.min(size, this.deviceSettings.maxTextureSize)));
-          } else if (url.includes("width=") || url.includes("w=")) {
-            params.set("w", String(Math.min(size, this.deviceSettings.maxTextureSize)));
-          }
-        } else {
-          params.set("size", String(Math.min(size, this.deviceSettings.maxTextureSize)));
-        }
-        if (url.includes("quality=") || url.includes("q=")) {
-          params.set("q", isHD ? "80" : "60");
-        }
-        if (this.supportedFormats.avif) {
-          params.set("fm", "avif");
-        } else if (this.supportedFormats.webp) {
-          params.set("fm", "webp");
-        }
-        urlObj.search = params.toString();
-        return urlObj.toString();
-      } catch (error) {
-        console.warn("Error parsing URL:", error);
-        return url;
-      }
-    }
-    // Create a colored empty texture for placeholders
-    createEmptyTexture(hexColor = "#303030") {
-      const { gl } = this;
-      const texture = gl.createTexture();
-      const r = parseInt(hexColor.slice(1, 3), 16) || 0;
-      const g = parseInt(hexColor.slice(3, 5), 16) || 0;
-      const b = parseInt(hexColor.slice(5, 7), 16) || 0;
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.texImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.RGBA,
-        1,
-        1,
-        0,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        new Uint8Array([r, g, b, 255])
-      );
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      return texture;
-    }
-    // Method to create a texture from an image
-    createTexture(image, options = {}) {
-      const { gl } = this;
-      const texture = gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      if (!image || !image.complete || image.naturalWidth === 0) {
-        gl.texImage2D(
-          gl.TEXTURE_2D,
-          0,
-          gl.RGBA,
-          1,
-          1,
-          0,
-          gl.RGBA,
-          gl.UNSIGNED_BYTE,
-          new Uint8Array([0, 0, 0, 255])
-        );
-      } else {
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-      }
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, options.wrapS || gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, options.wrapT || gl.CLAMP_TO_EDGE);
-      if (options.useMipmaps && image && image.complete && isPowerOf2(image.naturalWidth) && isPowerOf2(image.naturalHeight)) {
-        gl.texParameteri(
-          gl.TEXTURE_2D,
-          gl.TEXTURE_MIN_FILTER,
-          options.minFilter || gl.LINEAR_MIPMAP_LINEAR
-        );
-        gl.generateMipmap(gl.TEXTURE_2D);
-      } else {
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, options.minFilter || gl.LINEAR);
-      }
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, options.magFilter || gl.LINEAR);
-      return texture;
-    }
-    // Method to release texture resources
-    releaseTexture(url) {
-      if (this.textures.has(url)) {
-        const texture = this.textures.get(url);
-        this.gl.deleteTexture(texture);
-        this.textures.delete(url);
-        this.imageInfo.delete(url);
-      }
-    }
-    // Method to release all textures
-    releaseAllTextures() {
-      this.textures.forEach((texture) => {
-        this.gl.deleteTexture(texture);
-      });
-      this.textures.clear();
-      this.imageInfo.clear();
-    }
-    // Check if a texture is loaded
-    isTextureLoaded(url) {
-      return this.textures.has(url) && this.imageInfo.has(url);
-    }
-    // Get texture if available
-    getTexture(url) {
-      return this.textures.get(url) || null;
-    }
-    // Get image info if available
-    getImageInfo(url) {
-      return this.imageInfo.get(url) || null;
+    cleanup() {
+      this.imageCache.clear();
     }
   };
+  var initS3ImageLoader = (config3) => S3ImageLoader.getInstance(config3);
 
-  // src/components/ArchiveGrid/GridRenderer.ts
-  var GridRenderer = class {
-    constructor(canvas, deviceSettings) {
+  // src/components/WebGLGrid/WebGLGrid.ts
+  init_live_reload();
+
+  // src/components/WebGLGrid/types.ts
+  init_live_reload();
+
+  // src/components/WebGLGrid/WebGLGrid.ts
+  var WebGLGrid = class {
+    constructor(canvas) {
+      this.images = [];
+      this.textures = /* @__PURE__ */ new Map();
       this.gridItems = [];
-      this.viewport = { left: 0, right: 0, top: 0, bottom: 0 };
       this.isInitialized = false;
-      this.lastTransform = { scale: 1, x: 0, y: 0 };
-      // Grid configuration
-      this.gridSpacing = 0;
-      this.itemWidth = 0;
-      this.itemHeight = 0;
-      this.totalWidth = 0;
-      this.totalHeight = 0;
-      this.columnCount = 0;
-      this.rowCount = 0;
-      this.animations = /* @__PURE__ */ new Map();
-      // Vertex shader for drawing grid items
-      this.vertexShaderSource = `
+      this.isActive = false;
+      this.isDragging = false;
+      this.lastMouseX = 0;
+      this.lastMouseY = 0;
+      this.lastTouchX = 0;
+      this.lastTouchY = 0;
+      this.isZooming = false;
+      this.zoomAnimation = null;
+      this.momentum = { x: 0, y: 0 };
+      this.targetX = 0;
+      this.targetY = 0;
+      this.multiplier = 2.5;
+      this.viewportCenter = { x: 0, y: 0 };
+      this.maxScale = 18;
+      this.minScale = 0.6;
+      this.maxImageWidth = 0.6;
+      this.lastFrameItems = /* @__PURE__ */ new Map();
+      this.frameCount = 0;
+      this.viewTransform = {
+        scale: 1,
+        x: 0,
+        y: 0
+      };
+      this.vertexShader = `
     attribute vec4 a_position;
     attribute vec2 a_texCoord;
     uniform mat4 u_matrix;
@@ -9382,579 +9109,560 @@
       v_texCoord = a_texCoord;
     }
   `;
-      // Fragment shader for drawing grid items with transitions and effects
-      this.fragmentShaderSource = `
+      this.fragmentShader = `
     precision mediump float;
     uniform sampler2D u_texture;
     uniform float u_opacity;
-    uniform float u_grayscale;
-    uniform float u_r;
-    uniform float u_g;
-    uniform float u_b;
     varying vec2 v_texCoord;
-    
     void main() {
       vec4 texColor = texture2D(u_texture, v_texCoord);
-      
-      // Apply background color for transparent areas
-      texColor = vec4(
-        mix(u_r, texColor.r, texColor.a),
-        mix(u_g, texColor.g, texColor.a),
-        mix(u_b, texColor.b, texColor.a),
-        max(texColor.a, 0.1)
-      );
-      
-      // Apply grayscale effect
-      if (u_grayscale > 0.0) {
-        float gray = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
-        texColor.rgb = mix(texColor.rgb, vec3(gray), u_grayscale);
-      }
-      
-      // Apply opacity
       gl_FragColor = vec4(texColor.rgb, texColor.a * u_opacity);
     }
   `;
+      this.render = () => {
+        if (!this.isActive || !this.isInitialized)
+          return;
+        this.updatePosition();
+        this.draw();
+        requestAnimationFrame(this.render);
+      };
+      this.updateCanvasSize(canvas);
       this.gl = canvas.getContext("webgl", {
+        alpha: true,
         antialias: true,
-        premultipliedAlpha: false,
-        alpha: true
+        premultipliedAlpha: false
       });
       if (!this.gl) {
         throw new Error("WebGL not supported");
       }
-      this.deviceSettings = deviceSettings;
-      this.initWebGL();
-      this.textureManager = new TextureManager(this.gl, deviceSettings);
-      resizeCanvas(canvas, deviceSettings.pixelRatio);
+      this.setupWebGL();
+      this.bindEvents(canvas);
+      this.initMultiplier();
+      this.updateViewportCenter();
     }
-    // Initialize WebGL context, shaders, buffers, etc.
-    initWebGL() {
+    isTabletViewport() {
+      const { width } = this.gl.canvas.getBoundingClientRect();
+      return width > 768 && width <= 1024;
+    }
+    isMobileViewport() {
+      const { width } = this.gl.canvas.getBoundingClientRect();
+      return width <= 768 || "ontouchstart" in window;
+    }
+    getResponsiveZoomLevels() {
+      const isMobile = this.isMobileViewport();
+      const isTablet = this.isTabletViewport();
+      if (isMobile)
+        return [1, 2, 5, 9, 18];
+      if (isTablet)
+        return [0.9, 1.5, 3.75, 7.5, 15];
+      return [0.6, 1, 3, 6, 12];
+    }
+    getResponsiveMaxScale() {
+      const zoomLevels = this.getResponsiveZoomLevels();
+      return zoomLevels[zoomLevels.length - 1];
+    }
+    getNextZoomLevel(factor) {
+      const zoomLevels = this.getResponsiveZoomLevels();
+      const currentScale = this.viewTransform.scale;
+      if (factor > 1) {
+        for (const level of zoomLevels) {
+          if (level > currentScale + 0.1) {
+            return level;
+          }
+        }
+        return zoomLevels[zoomLevels.length - 1];
+      }
+      for (let i = zoomLevels.length - 1; i >= 0; i--) {
+        if (zoomLevels[i] < currentScale - 0.1) {
+          return zoomLevels[i];
+        }
+      }
+      return zoomLevels[0];
+    }
+    initMultiplier() {
+      const { width } = this.gl.canvas.getBoundingClientRect();
+      this.multiplier = width <= 768 || "ontouchstart" in window ? 4.5 : 2.5;
+    }
+    updateCanvasSize(canvas) {
+      const pixelRatio = window.devicePixelRatio;
+      const rect = canvas.getBoundingClientRect();
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
+      canvas.width = rect.width * pixelRatio;
+      canvas.height = rect.height * pixelRatio;
+    }
+    updateViewportCenter() {
+      const { width, height } = this.gl.canvas;
+      this.viewportCenter = {
+        x: width / 2,
+        y: height / 2
+      };
+    }
+    setupWebGL() {
       const { gl } = this;
-      const vertexShader = createShader(gl, this.vertexShaderSource, gl.VERTEX_SHADER);
-      const fragmentShader = createShader(gl, this.fragmentShaderSource, gl.FRAGMENT_SHADER);
-      this.program = createProgram(gl, vertexShader, fragmentShader);
+      const vertShader = this.createShader(this.vertexShader, gl.VERTEX_SHADER);
+      const fragShader = this.createShader(this.fragmentShader, gl.FRAGMENT_SHADER);
+      this.program = this.createProgram(vertShader, fragShader);
       this.locations = {
         position: gl.getAttribLocation(this.program, "a_position"),
         texCoord: gl.getAttribLocation(this.program, "a_texCoord"),
         matrix: gl.getUniformLocation(this.program, "u_matrix"),
         texture: gl.getUniformLocation(this.program, "u_texture"),
-        opacity: gl.getUniformLocation(this.program, "u_opacity"),
-        grayscale: gl.getUniformLocation(this.program, "u_grayscale"),
-        backgroundR: gl.getUniformLocation(this.program, "u_r"),
-        backgroundG: gl.getUniformLocation(this.program, "u_g"),
-        backgroundB: gl.getUniformLocation(this.program, "u_b")
+        opacity: gl.getUniformLocation(this.program, "u_opacity")
       };
-      const positionBuffer = gl.createBuffer();
-      const texCoordBuffer = gl.createBuffer();
       this.buffers = {
-        position: positionBuffer,
-        texCoord: texCoordBuffer
+        position: gl.createBuffer(),
+        texCoord: gl.createBuffer()
       };
-      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]),
-        gl.STATIC_DRAW
-      );
-      gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]),
-        gl.STATIC_DRAW
-      );
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-      gl.clearColor(0, 0, 0, 0);
-    }
-    // Set up the grid with proper dimensions
-    async setupGrid(options) {
-      const { gl } = this;
-      const { width, height } = gl.canvas;
-      const { pixelRatio, columnCount, rowCount } = this.deviceSettings;
-      this.columnCount = options.columnCount || columnCount;
-      this.rowCount = options.rowCount || rowCount;
-      const maxWidth = width * 0.8;
-      const itemsPerRow = this.columnCount;
-      this.itemWidth = Math.min(maxWidth / itemsPerRow, 300 * pixelRatio);
-      this.itemHeight = this.itemWidth * 0.75;
-      this.gridSpacing = this.itemWidth * 0.2;
-      this.totalWidth = (this.itemWidth + this.gridSpacing) * this.columnCount;
-      this.totalHeight = (this.itemHeight + this.gridSpacing) * this.rowCount;
-      this.viewport = {
-        left: -this.totalWidth / 2,
-        right: this.totalWidth / 2,
-        top: -this.totalHeight / 2,
-        bottom: this.totalHeight / 2
-      };
-      this.generateGridItems(options.images);
-      this.isInitialized = true;
-    }
-    // Generate grid items with positions and load textures
-    async generateGridItems(imageUrls) {
-      this.gridItems = [];
-      const availableImages = [...imageUrls];
-      const cellWidth = this.itemWidth + this.gridSpacing;
-      const cellHeight = this.itemHeight + this.gridSpacing;
-      const startX = -this.totalWidth / 2 + this.itemWidth / 2;
-      const startY = -this.totalHeight / 2 + this.itemHeight / 2;
-      for (let row = 0; row < this.rowCount; row++) {
-        for (let col = 0; col < this.columnCount; col++) {
-          const imageIndex = Math.floor(Math.random() * availableImages.length);
-          const imageUrl = availableImages[imageIndex];
-          const x = startX + col * cellWidth;
-          const y = startY + row * cellHeight;
-          const gridItem = {
-            x,
-            y,
-            width: this.itemWidth,
-            height: this.itemHeight,
-            textureUrl: imageUrl,
-            isVisible: true,
-            opacity: 0,
-            // Start with 0 opacity for fade-in animation
-            zIndex: 0,
-            velocity: { x: 0, y: 0 }
-          };
-          this.animations.set(`${x}-${y}`, {
-            target: 1,
-            // Target opacity
-            current: 0
-            // Current opacity
-          });
-          this.textureManager.queueTexture(
-            imageUrl,
-            row * this.columnCount + col,
-            // Priority based on position
-            (texture, info) => {
-              gridItem.isVisible = true;
-            }
-          );
-          this.gridItems.push(gridItem);
-        }
-      }
-    }
-    // Update visibility of grid items based on viewport transform
-    updateVisibility(transform) {
-      if (!this.isInitialized)
-        return;
-      const { gl } = this;
-      const { width, height } = gl.canvas;
-      this.lastTransform = { ...transform };
-      const visibleArea = {
-        left: -transform.x / transform.scale,
-        right: (width - transform.x) / transform.scale,
-        top: -transform.y / transform.scale,
-        bottom: (height - transform.y) / transform.scale
-      };
-      const padding = Math.max(this.itemWidth, this.itemHeight) * 2;
-      const extendedVisibleArea = {
-        left: visibleArea.left - padding,
-        right: visibleArea.right + padding,
-        top: visibleArea.top - padding,
-        bottom: visibleArea.bottom + padding
-      };
-      this.wrapGridItems(extendedVisibleArea, transform.scale);
-      for (const item of this.gridItems) {
-        const itemBounds = {
-          left: item.x - item.width / 2,
-          right: item.x + item.width / 2,
-          top: item.y - item.height / 2,
-          bottom: item.y + item.height / 2
-        };
-        const isVisible = !(itemBounds.right < extendedVisibleArea.left || itemBounds.left > extendedVisibleArea.right || itemBounds.bottom < extendedVisibleArea.top || itemBounds.bottom > extendedVisibleArea.bottom);
-        item.isVisible = isVisible;
-        const animKey = `${item.x}-${item.y}`;
-        if (this.animations.has(animKey)) {
-          this.animations.get(animKey).target = isVisible ? 1 : 0;
-        } else {
-          this.animations.set(animKey, { target: isVisible ? 1 : 0, current: item.opacity });
-        }
-        if (isVisible && transform.scale > 2) {
-          this.textureManager.queueTexture(
-            item.textureUrl,
-            0,
-            // High priority
-            (texture, info) => {
-            },
-            true
-            // Request HD version
-          );
-        }
-      }
-    }
-    // Wrap grid items to create an infinite effect
-    wrapGridItems(visibleArea, scale) {
-      const gridWidth = this.totalWidth;
-      const gridHeight = this.totalHeight;
-      for (const item of this.gridItems) {
-        if (item.x - item.width / 2 > visibleArea.right) {
-          item.x -= gridWidth;
-        } else if (item.x + item.width / 2 < visibleArea.left) {
-          item.x += gridWidth;
-        }
-        if (item.y - item.height / 2 > visibleArea.bottom) {
-          item.y -= gridHeight;
-        } else if (item.y + item.height / 2 < visibleArea.top) {
-          item.y += gridHeight;
-        }
-      }
-    }
-    // Draw the grid to the canvas
-    draw(transform) {
-      if (!this.isInitialized)
-        return;
-      const { gl } = this;
-      gl.clear(gl.COLOR_BUFFER_BIT);
-      gl.useProgram(this.program);
-      gl.enableVertexAttribArray(this.locations.position);
+      const positions = new Float32Array([0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1]);
+      const texCoords = new Float32Array([0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0]);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
-      gl.vertexAttribPointer(this.locations.position, 2, gl.FLOAT, false, 0, 0);
-      gl.enableVertexAttribArray(this.locations.texCoord);
+      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoord);
-      gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
-      this.updateAnimations();
-      const sortedItems = [...this.gridItems].filter((item) => item.isVisible).sort((a, b) => a.zIndex - b.zIndex);
-      for (const item of sortedItems) {
-        if (item.opacity <= 0.01)
-          continue;
-        const texture = this.textureManager.getTexture(item.textureUrl);
-        if (!texture)
-          continue;
-        const matrix = this.calculateItemMatrix(item, transform);
-        const imageInfo = this.textureManager.getImageInfo(item.textureUrl);
-        const color = imageInfo?.color || "#000000";
-        const { r, g, b } = this.hexToRgb(color);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.uniform1i(this.locations.texture, 0);
-        gl.uniformMatrix4fv(this.locations.matrix, false, matrix);
-        gl.uniform1f(this.locations.opacity, item.opacity);
-        gl.uniform1f(this.locations.grayscale, 0);
-        gl.uniform1f(this.locations.backgroundR, r / 255);
-        gl.uniform1f(this.locations.backgroundG, g / 255);
-        gl.uniform1f(this.locations.backgroundB, b / 255);
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
+      gl.clearColor(0.059, 0.059, 0.059, 1);
+    }
+    createShader(source, type) {
+      const shader = this.gl.createShader(type);
+      this.gl.shaderSource(shader, source);
+      this.gl.compileShader(shader);
+      if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
+        throw new Error(`Shader compile error: ${this.gl.getShaderInfoLog(shader)}`);
+      }
+      return shader;
+    }
+    createProgram(vertShader, fragShader) {
+      const program = this.gl.createProgram();
+      this.gl.attachShader(program, vertShader);
+      this.gl.attachShader(program, fragShader);
+      this.gl.linkProgram(program);
+      if (!this.gl.getProgramParameter(program, this.gl.LINK_STATUS)) {
+        throw new Error(`Program link error: ${this.gl.getProgramInfoLog(program)}`);
+      }
+      return program;
+    }
+    bindEvents(canvas) {
+      const boundMouseDown = this.handleMouseDown.bind(this);
+      const boundMouseMove = this.handleMouseMove.bind(this);
+      const boundMouseUp = this.handleMouseUp.bind(this);
+      const boundTouchStart = this.handleTouchStart.bind(this);
+      const boundTouchMove = this.handleTouchMove.bind(this);
+      const boundTouchEnd = this.handleTouchEnd.bind(this);
+      canvas.addEventListener("mousedown", boundMouseDown);
+      window.addEventListener("mousemove", boundMouseMove);
+      window.addEventListener("mouseup", boundMouseUp);
+      canvas.addEventListener("touchstart", boundTouchStart, { passive: false });
+      window.addEventListener("touchmove", boundTouchMove, { passive: false });
+      window.addEventListener("touchend", boundTouchEnd);
+      this.boundEvents = {
+        mouseDown: boundMouseDown,
+        mouseMove: boundMouseMove,
+        mouseUp: boundMouseUp,
+        touchStart: boundTouchStart,
+        touchMove: boundTouchMove,
+        touchEnd: boundTouchEnd
+      };
+      canvas.addEventListener("wheel", (e) => e.preventDefault(), { passive: false });
+    }
+    handleMouseDown(e) {
+      this.isDragging = true;
+      this.lastMouseX = e.clientX;
+      this.lastMouseY = e.clientY;
+      this.momentum = { x: 0, y: 0 };
+      this.targetX = this.viewTransform.x;
+      this.targetY = this.viewTransform.y;
+      const canvas = e.target;
+      canvas.style.cursor = "grabbing";
+    }
+    handleMouseMove(e) {
+      if (!this.isDragging)
+        return;
+      const deltaX = (e.clientX - this.lastMouseX) * this.multiplier;
+      const deltaY = (e.clientY - this.lastMouseY) * this.multiplier;
+      this.handleDrag(deltaX, deltaY);
+      this.lastMouseX = e.clientX;
+      this.lastMouseY = e.clientY;
+    }
+    handleMouseUp() {
+      this.isDragging = false;
+      const canvas = this.gl.canvas;
+      canvas.style.cursor = "grab";
+    }
+    handleTouchStart(e) {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        this.isDragging = true;
+        this.lastMouseX = e.touches[0].clientX;
+        this.lastMouseY = e.touches[0].clientY;
+        this.momentum = { x: 0, y: 0 };
+        this.targetX = this.viewTransform.x;
+        this.targetY = this.viewTransform.y;
       }
     }
-    // Update animation states
-    updateAnimations() {
-      for (const [key, anim] of this.animations.entries()) {
-        anim.current = lerp(anim.current, anim.target, 0.1);
-        for (const item of this.gridItems) {
-          if (`${item.x}-${item.y}` === key) {
-            item.opacity = anim.current;
-            break;
+    handleTouchMove(e) {
+      e.preventDefault();
+      if (!this.isDragging || e.touches.length !== 1)
+        return;
+      const deltaX = (e.touches[0].clientX - this.lastMouseX) * this.multiplier;
+      const deltaY = (e.touches[0].clientY - this.lastMouseY) * this.multiplier;
+      this.handleDrag(deltaX, deltaY);
+      this.lastMouseX = e.touches[0].clientX;
+      this.lastMouseY = e.touches[0].clientY;
+    }
+    handleTouchEnd() {
+      this.isDragging = false;
+    }
+    handleDrag(deltaX, deltaY) {
+      this.targetX += deltaX;
+      this.targetY += deltaY;
+      this.momentum = {
+        x: deltaX,
+        y: deltaY
+      };
+    }
+    updatePosition() {
+      if (this.isZooming)
+        return;
+      const easing = 0.085;
+      if (!this.isDragging) {
+        const friction = 0.95;
+        this.momentum.x *= friction;
+        this.momentum.y *= friction;
+        if (Math.abs(this.momentum.x) > 0.01 || Math.abs(this.momentum.y) > 0.01) {
+          this.targetX += this.momentum.x;
+          this.targetY += this.momentum.y;
+        }
+      }
+      const dx = this.targetX - this.viewTransform.x;
+      const dy = this.targetY - this.viewTransform.y;
+      if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
+        this.viewTransform.x += dx * easing;
+        this.viewTransform.y += dy * easing;
+      } else {
+        this.viewTransform.x = this.targetX;
+        this.viewTransform.y = this.targetY;
+      }
+      this.viewTransform.x = Math.round(this.viewTransform.x * 100) / 100;
+      this.viewTransform.y = Math.round(this.viewTransform.y * 100) / 100;
+      this.updateGridPositions();
+    }
+    async loadImages(imageUrls) {
+      const loadPromises = imageUrls.map((url) => {
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => {
+            const texture = this.createTexture(img);
+            this.textures.set(url, texture);
+            resolve({
+              url,
+              element: img,
+              width: img.naturalWidth,
+              height: img.naturalHeight,
+              color: "#000000"
+            });
+          };
+          img.onerror = reject;
+          img.src = url;
+        });
+      });
+      this.images = await Promise.all(loadPromises);
+    }
+    createTexture(image) {
+      const { gl } = this;
+      const texture = gl.createTexture();
+      const canvas = document.createElement("canvas");
+      const size = Math.pow(2, Math.ceil(Math.log2(Math.max(image.width, image.height))));
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(image, 0, 0, image.width, image.height, 0, 0, size, size);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      return texture;
+    }
+    calculateImageDimensions(image, containerWidth, containerHeight) {
+      const imageAspect = image.width / image.height;
+      const containerAspect = containerWidth / containerHeight;
+      const maxWidth = containerWidth * this.maxImageWidth;
+      let width;
+      let height;
+      if (imageAspect > containerAspect) {
+        width = Math.min(containerWidth, maxWidth);
+        height = width / imageAspect;
+      } else {
+        height = containerHeight;
+        width = Math.min(height * imageAspect, maxWidth);
+      }
+      const offsetY = 0;
+      return { width, height, offsetY };
+    }
+    calculateGridDimensions(options) {
+      const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
+      const maxItemWidth = canvasWidth * this.maxImageWidth;
+      const itemWidth = Math.min(maxItemWidth, canvasWidth / (options.columnCount + 1));
+      const itemHeight = itemWidth * 0.75;
+      const padding = itemWidth * 0.6;
+      const zoomBuffer = 12;
+      const minColumns = Math.ceil(canvasWidth / (itemWidth + padding)) + zoomBuffer;
+      const minRows = Math.ceil(canvasHeight / (itemHeight + padding)) + zoomBuffer;
+      this.dimensions = {
+        itemWidth,
+        itemHeight,
+        padding,
+        columnCount: Math.max(options.columnCount, minColumns),
+        rowCount: Math.max(options.rowCount, minRows),
+        totalWidth: Math.max(options.columnCount, minColumns) * (itemWidth + padding),
+        totalHeight: Math.max(options.rowCount, minRows) * (itemHeight + padding)
+      };
+    }
+    createBaseGrid(imageCount, columnsPerGrid) {
+      const sequence = Array.from({ length: imageCount }, (_, i) => i);
+      for (let i = sequence.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [sequence[i], sequence[j]] = [sequence[j], sequence[i]];
+      }
+      return sequence;
+    }
+    updateGridPositions() {
+      const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
+      const viewScale = this.viewTransform.scale;
+      let bufferFactor;
+      if (viewScale >= 14)
+        bufferFactor = 4;
+      else if (viewScale >= 9)
+        bufferFactor = 3;
+      else if (viewScale >= 4)
+        bufferFactor = 2;
+      else if (viewScale <= 0.5)
+        bufferFactor = 6;
+      else
+        bufferFactor = 1.5;
+      const visibleWidth = canvasWidth / viewScale * bufferFactor;
+      const visibleHeight = canvasHeight / viewScale * bufferFactor;
+      const worldCenterX = -this.viewTransform.x / viewScale + canvasWidth / 2 / viewScale;
+      const worldCenterY = -this.viewTransform.y / viewScale + canvasHeight / 2 / viewScale;
+      const gridWidth = this.dimensions.totalWidth;
+      const gridHeight = this.dimensions.totalHeight;
+      this.gridItems.forEach((item) => {
+        const relativeX = item.x - worldCenterX;
+        const relativeY = item.y - worldCenterY;
+        const wrapX = Math.floor((relativeX + visibleWidth / 2) / gridWidth);
+        const wrapY = Math.floor((relativeY + visibleHeight / 2) / gridHeight);
+        if (wrapX !== 0)
+          item.x -= wrapX * gridWidth;
+        if (wrapY !== 0)
+          item.y -= wrapY * gridHeight;
+      });
+      if (viewScale > 4) {
+        this.momentum.x *= 0.5;
+        this.momentum.y *= 0.5;
+      }
+    }
+    setupGrid(options) {
+      this.calculateGridDimensions(options);
+      this.gridItems = [];
+      const baseColumns = this.dimensions.columnCount;
+      const baseRows = Math.max(
+        Math.ceil(this.images.length / baseColumns),
+        this.dimensions.rowCount
+      );
+      const baseGridPattern = this.createBaseGrid(this.images.length, baseColumns);
+      const startCol = Math.floor(-this.dimensions.columnCount / 2);
+      const startRow = Math.floor(-this.dimensions.rowCount / 2);
+      const cellWidth = this.dimensions.itemWidth + this.dimensions.padding;
+      const cellHeight = this.dimensions.itemHeight + this.dimensions.padding;
+      const occupiedPositions = /* @__PURE__ */ new Set();
+      for (let row = startRow; row <= startRow + this.dimensions.rowCount; row++) {
+        for (let col = startCol; col <= startCol + this.dimensions.columnCount; col++) {
+          const wrappedRow = (row % baseRows + baseRows) % baseRows;
+          const wrappedCol = (col % baseColumns + baseColumns) % baseColumns;
+          const baseIndex = wrappedRow * baseColumns + wrappedCol;
+          const imageIndex = baseGridPattern[baseIndex % this.images.length];
+          const x = col * cellWidth;
+          const y = row * cellHeight;
+          const posKey = `${Math.round(x)},${Math.round(y)}`;
+          if (!occupiedPositions.has(posKey)) {
+            occupiedPositions.add(posKey);
+            this.gridItems.push({
+              x,
+              y,
+              width: this.dimensions.itemWidth,
+              height: this.dimensions.itemHeight,
+              imageIndex,
+              opacity: 1,
+              velocity: { x: 0, y: 0 }
+            });
           }
         }
       }
+      const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
+      this.viewTransform = {
+        scale: this.isMobileViewport() ? 2 : this.isTabletViewport() ? 1.5 : 1,
+        x: canvasWidth / 2,
+        y: canvasHeight / 2
+      };
     }
-    // Calculate transformation matrix for an item
-    calculateItemMatrix(item, transform) {
-      const { gl } = this;
-      const { width, height } = gl.canvas;
+    setZoom(factor, originX, originY) {
+      const canvas = this.gl.canvas;
+      const rect = canvas.getBoundingClientRect();
+      const zoomLevels = this.getResponsiveZoomLevels();
+      if (this.viewTransform.scale >= zoomLevels[zoomLevels.length - 1] && factor > 1)
+        return;
+      if (this.viewTransform.scale <= zoomLevels[0] && factor < 1)
+        return;
+      const pixelRatio = window.devicePixelRatio;
+      const centerX = rect.width * pixelRatio / 2;
+      const centerY = rect.height * pixelRatio / 2;
+      const newScale = this.getNextZoomLevel(factor);
+      if (Math.abs(newScale - this.viewTransform.scale) < 1e-3)
+        return;
+      const worldCenterX = (centerX - this.viewTransform.x) / this.viewTransform.scale;
+      const worldCenterY = (centerY - this.viewTransform.y) / this.viewTransform.scale;
+      const newX = centerX - worldCenterX * newScale;
+      const newY = centerY - worldCenterY * newScale;
+      if (this.zoomAnimation) {
+        this.zoomAnimation.kill();
+      }
+      this.isZooming = true;
+      this.targetX = newX;
+      this.targetY = newY;
+      this.zoomAnimation = gsapWithCSS.to(this.viewTransform, {
+        scale: newScale,
+        x: newX,
+        y: newY,
+        duration: 0.3,
+        ease: "power2.out",
+        onUpdate: () => {
+          this.updateGridPositions();
+        },
+        onComplete: () => {
+          this.isZooming = false;
+          this.zoomAnimation = null;
+          this.targetX = this.viewTransform.x;
+          this.targetY = this.viewTransform.y;
+          this.momentum = { x: 0, y: 0 };
+        }
+      });
+    }
+    createMatrix(item, width, height, xOffset, yOffset) {
       const matrix = new Float32Array(16);
-      matrix[0] = 1;
-      matrix[5] = 1;
-      matrix[10] = 1;
+      const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
+      const finalWidth = width * this.viewTransform.scale;
+      const finalHeight = height * this.viewTransform.scale;
+      const finalX = (item.x + xOffset) * this.viewTransform.scale + this.viewTransform.x;
+      const finalY = (item.y + yOffset) * this.viewTransform.scale + this.viewTransform.y;
+      matrix[0] = finalWidth * 2 / canvasWidth;
+      matrix[5] = finalHeight * 2 / canvasHeight;
+      matrix[12] = finalX * 2 / canvasWidth - 1;
+      matrix[13] = -finalY * 2 / canvasHeight + 1;
       matrix[15] = 1;
-      const x = item.x * transform.scale + transform.x;
-      const y = item.y * transform.scale + transform.y;
-      const w = item.width * transform.scale;
-      const h = item.height * transform.scale;
-      matrix[0] = w * 2 / width;
-      matrix[5] = h * 2 / height;
-      matrix[12] = x * 2 / width - 1 + w / width;
-      matrix[13] = -y * 2 / height + 1 - h / height;
       return matrix;
     }
-    // Helper to convert hex color to RGB components
-    hexToRgb(hex) {
-      if (!hex || !hex.match(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/)) {
-        return { r: 0, g: 0, b: 0 };
-      }
-      const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
-      const fullHex = hex.replace(shorthandRegex, (m, r, g, b) => {
-        return r + r + g + g + b + b;
-      });
-      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(fullHex);
-      return result ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16)
-      } : { r: 0, g: 0, b: 0 };
-    }
-    // Clean up resources
-    destroy() {
+    draw() {
       const { gl } = this;
-      gl.deleteProgram(this.program);
-      gl.deleteBuffer(this.buffers.position);
-      gl.deleteBuffer(this.buffers.texCoord);
-      this.textureManager.releaseAllTextures();
-      this.isInitialized = false;
-      this.gridItems = [];
-      this.animations.clear();
-    }
-    // Resize handler
-    resize(width, height) {
-      const { gl } = this;
-      resizeCanvas(gl.canvas, this.deviceSettings.pixelRatio);
+      if (!gl || !this.program)
+        return;
+      this.frameCount++;
       gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-    }
-  };
-
-  // src/components/ArchiveGrid/InteractionManager.ts
-  init_live_reload();
-  var InteractionManager = class {
-    constructor(canvas, transform, deviceSettings) {
-      this.isDragging = false;
-      this.lastMouseX = 0;
-      this.lastMouseY = 0;
-      this.lastTouchX = 0;
-      this.lastTouchY = 0;
-      this.velocity = { x: 0, y: 0 };
-      this.animationId = null;
-      this.isZooming = false;
-      this.zoomFactor = 1;
-      this.minScale = 0.5;
-      this.maxScale = 5;
-      this.transformCallbacks = [];
-      this.isActive = true;
-      // Handle mouse down events
-      this.handleMouseDown = (e) => {
-        if (!this.isActive)
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.useProgram(this.program);
+      gl.enableVertexAttribArray(this.locations.position);
+      gl.enableVertexAttribArray(this.locations.texCoord);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
+      gl.vertexAttribPointer(this.locations.position, 2, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoord);
+      gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
+      const sortedItems = [...this.gridItems].filter((item) => item.opacity > 0).sort((a, b) => a.imageIndex - b.imageIndex);
+      let currentTexture = null;
+      const newFrameItems = /* @__PURE__ */ new Map();
+      sortedItems.forEach((item) => {
+        const image = this.images[item.imageIndex];
+        if (!image)
           return;
-        e.preventDefault();
-        this.isDragging = true;
-        this.lastMouseX = e.clientX;
-        this.lastMouseY = e.clientY;
-        this.velocity = { x: 0, y: 0 };
-        this.canvas.style.cursor = "grabbing";
-      };
-      // Handle mouse move events
-      this.handleMouseMove = (e) => {
-        if (!this.isActive || !this.isDragging)
+        const texture = this.textures.get(image.url);
+        if (!texture)
           return;
-        const deltaX = e.clientX - this.lastMouseX;
-        const deltaY = e.clientY - this.lastMouseY;
-        const scaledDeltaX = deltaX * this.deviceSettings.dragMultiplier;
-        const scaledDeltaY = deltaY * this.deviceSettings.dragMultiplier;
-        this.handleDrag(scaledDeltaX, scaledDeltaY);
-        this.lastMouseX = e.clientX;
-        this.lastMouseY = e.clientY;
-      };
-      // Handle mouse up events
-      this.handleMouseUp = () => {
-        if (!this.isActive)
-          return;
-        this.isDragging = false;
-        this.canvas.style.cursor = "grab";
-      };
-      // Handle touch start events
-      this.handleTouchStart = (e) => {
-        if (!this.isActive)
-          return;
-        e.preventDefault();
-        if (e.touches.length === 1) {
-          this.isDragging = true;
-          this.lastTouchX = e.touches[0].clientX;
-          this.lastTouchY = e.touches[0].clientY;
-          this.velocity = { x: 0, y: 0 };
+        const itemKey = `${Math.round(item.x)}-${Math.round(item.y)}-${item.imageIndex}`;
+        newFrameItems.set(itemKey, item);
+        const lastItem = this.lastFrameItems.get(itemKey);
+        const targetOpacity = item.opacity;
+        item.opacity = lastItem ? lastItem.opacity + (targetOpacity - lastItem.opacity) * 0.3 : targetOpacity;
+        if (texture !== currentTexture) {
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          gl.uniform1i(this.locations.texture, 0);
+          currentTexture = texture;
         }
-      };
-      // Handle touch move events
-      this.handleTouchMove = (e) => {
-        if (!this.isActive)
-          return;
-        e.preventDefault();
-        if (e.touches.length === 1 && this.isDragging) {
-          const deltaX = e.touches[0].clientX - this.lastTouchX;
-          const deltaY = e.touches[0].clientY - this.lastTouchY;
-          const scaledDeltaX = deltaX * this.deviceSettings.dragMultiplier;
-          const scaledDeltaY = deltaY * this.deviceSettings.dragMultiplier;
-          this.handleDrag(scaledDeltaX, scaledDeltaY);
-          this.lastTouchX = e.touches[0].clientX;
-          this.lastTouchY = e.touches[0].clientY;
-        }
-      };
-      // Handle touch end events
-      this.handleTouchEnd = () => {
-        if (!this.isActive)
-          return;
-        this.isDragging = false;
-      };
-      this.canvas = canvas;
-      this.transform = { ...transform };
-      this.targetTransform = { ...transform };
-      this.deviceSettings = deviceSettings;
-      this.bindEvents();
+        const dimensions = this.calculateImageDimensions(image, item.width, item.height);
+        const xOffset = (item.width - dimensions.width) / 2;
+        const yOffset = dimensions.offsetY || 0;
+        gl.uniform1f(this.locations.opacity, item.opacity);
+        const matrix = this.createMatrix(item, dimensions.width, dimensions.height, xOffset, yOffset);
+        gl.uniformMatrix4fv(this.locations.matrix, false, matrix);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      });
+      this.lastFrameItems = newFrameItems;
     }
-    // Bind interaction events (mouse/touch for dragging only)
-    bindEvents() {
-      this.canvas.addEventListener("mousedown", this.handleMouseDown);
-      window.addEventListener("mousemove", this.handleMouseMove);
-      window.addEventListener("mouseup", this.handleMouseUp);
-      this.canvas.addEventListener("touchstart", this.handleTouchStart, { passive: false });
-      window.addEventListener("touchmove", this.handleTouchMove, { passive: false });
-      window.addEventListener("touchend", this.handleTouchEnd);
-      window.addEventListener("touchcancel", this.handleTouchEnd);
-      this.startAnimationLoop();
+    async init(options) {
+      await this.loadImages(options.images);
+      this.setupGrid(options);
+      this.isInitialized = true;
     }
-    // Handle dragging logic
-    handleDrag(deltaX, deltaY) {
-      this.targetTransform.x += deltaX;
-      this.targetTransform.y += deltaY;
-      this.velocity = {
-        x: deltaX * 0.8,
-        // Reduce intensity a bit
-        y: deltaY * 0.8
-      };
-    }
-    // Button-based zoom handling
-    zoom(factor, originX, originY) {
-      const newScale = Math.max(
-        this.minScale,
-        Math.min(this.maxScale, this.transform.scale * factor)
-      );
-      const rect = this.canvas.getBoundingClientRect();
-      const canvasX = originX !== void 0 ? originX - rect.left : rect.width / 2;
-      const canvasY = originY !== void 0 ? originY - rect.top : rect.height / 2;
-      const worldX = (canvasX - this.transform.x) / this.transform.scale;
-      const worldY = (canvasY - this.transform.y) / this.transform.scale;
-      const newX = canvasX - worldX * newScale;
-      const newY = canvasY - worldY * newScale;
-      this.isZooming = true;
-      this.targetTransform.scale = newScale;
-      this.targetTransform.x = newX;
-      this.targetTransform.y = newY;
-      setTimeout(() => {
-        this.isZooming = false;
-      }, 500);
-    }
-    // Update position based on momentum
-    update() {
-      if (!this.isActive)
-        return this.transform;
-      if (!this.isDragging && !this.isZooming) {
-        this.velocity.x *= 0.95;
-        this.velocity.y *= 0.95;
-        if (Math.abs(this.velocity.x) > 0.1 || Math.abs(this.velocity.y) > 0.1) {
-          this.targetTransform.x += this.velocity.x;
-          this.targetTransform.y += this.velocity.y;
-        } else {
-          this.velocity.x = 0;
-          this.velocity.y = 0;
-        }
-      }
-      this.transform.x = lerp(this.transform.x, this.targetTransform.x, 0.2);
-      this.transform.y = lerp(this.transform.y, this.targetTransform.y, 0.2);
-      this.transform.scale = lerp(this.transform.scale, this.targetTransform.scale, 0.2);
-      this.notifyTransformChanged();
-      return this.transform;
-    }
-    // Handle animation frame updates
-    startAnimationLoop() {
-      const updateLoop = () => {
-        if (this.isActive) {
-          this.update();
-          this.animationId = requestAnimationFrame(updateLoop);
-        }
-      };
-      this.animationId = requestAnimationFrame(updateLoop);
-    }
-    // Add callback for transform changes
-    addTransformCallback(callback) {
-      this.transformCallbacks.push(callback);
-    }
-    // Notify all transform callbacks
-    notifyTransformChanged() {
-      for (const callback of this.transformCallbacks) {
-        callback({ ...this.transform });
-      }
-    }
-    // Set a specific transform
-    setTransform(transform) {
-      if (transform.x !== void 0)
-        this.targetTransform.x = transform.x;
-      if (transform.y !== void 0)
-        this.targetTransform.y = transform.y;
-      if (transform.scale !== void 0)
-        this.targetTransform.scale = transform.scale;
-    }
-    // Get current transform
-    getTransform() {
-      return { ...this.transform };
-    }
-    // Reset transform to initial state
-    resetTransform() {
-      this.targetTransform = {
-        x: 0,
-        y: 0,
-        scale: 1
-      };
-      this.velocity = { x: 0, y: 0 };
-    }
-    // Set active state
-    setActive(active) {
-      this.isActive = active;
-      if (active && !this.animationId) {
-        this.startAnimationLoop();
-      }
-    }
-    // Clean up
-    destroy() {
-      if (this.animationId !== null) {
-        cancelAnimationFrame(this.animationId);
-        this.animationId = null;
-      }
-      this.canvas.removeEventListener("mousedown", this.handleMouseDown);
-      window.removeEventListener("mousemove", this.handleMouseMove);
-      window.removeEventListener("mouseup", this.handleMouseUp);
-      this.canvas.removeEventListener("touchstart", this.handleTouchStart);
-      window.removeEventListener("touchmove", this.handleTouchMove);
-      window.removeEventListener("touchend", this.handleTouchEnd);
-      window.removeEventListener("touchcancel", this.handleTouchEnd);
-      this.transformCallbacks = [];
-      this.isActive = false;
-    }
-  };
-
-  // src/components/ArchiveGrid/index.ts
-  var ArchiveGrid = class {
-    constructor(canvas, images) {
-      this.isActive = false;
-      this.transform = { scale: 1, x: 0, y: 0 };
-      this.canvas = canvas;
-      this.deviceSettings = detectDeviceCapabilities();
-      this.renderer = new GridRenderer(canvas, this.deviceSettings);
-      this.interactionManager = new InteractionManager(canvas, this.transform, this.deviceSettings);
-      this.setupGrid(images);
-    }
-    // Initialize the grid with images
-    setupGrid(images) {
-    }
-    // Start rendering
     start() {
+      if (!this.isInitialized)
+        return;
       this.isActive = true;
       this.render();
     }
-    // Main render loop
-    render() {
-      if (!this.isActive)
-        return;
-      this.interactionManager.update();
-      this.renderer.updateVisibility(this.transform);
-      this.renderer.draw(this.transform);
-      requestAnimationFrame(() => this.render());
+    resize(width, height) {
+      const canvas = this.gl.canvas;
+      const pixelRatio = window.devicePixelRatio;
+      canvas.width = width * pixelRatio;
+      canvas.height = height * pixelRatio;
+      this.gl.viewport(0, 0, canvas.width, canvas.height);
+      this.updateViewportCenter();
+      if (this.isInitialized) {
+        this.setupGrid({
+          columnCount: this.dimensions.columnCount,
+          rowCount: this.dimensions.rowCount,
+          images: this.images.map((img) => img.url),
+          pixelRatio
+        });
+      }
     }
-    // Clean up resources
     destroy() {
       this.isActive = false;
-      this.interactionManager.destroy();
-      this.renderer.destroy();
+      const { gl } = this;
+      const canvas = gl.canvas;
+      this.textures.forEach((texture) => {
+        gl.deleteTexture(texture);
+      });
+      this.textures.clear();
+      gl.deleteBuffer(this.buffers.position);
+      gl.deleteBuffer(this.buffers.texCoord);
+      gl.useProgram(null);
+      gl.deleteProgram(this.program);
+      if (this.boundEvents) {
+        canvas.removeEventListener("mousedown", this.boundEvents.mouseDown);
+        window.removeEventListener("mousemove", this.boundEvents.mouseMove);
+        window.removeEventListener("mouseup", this.boundEvents.mouseUp);
+        canvas.removeEventListener("touchstart", this.boundEvents.touchStart);
+        window.removeEventListener("touchmove", this.boundEvents.touchMove);
+        window.removeEventListener("touchend", this.boundEvents.touchEnd);
+      }
     }
   };
 
-  // src/components/ArchiveView/ArchiveView.ts
+  // src/components/WebGLGrid/ArchiveView.ts
   var ArchiveView = class {
     constructor(container) {
       this.canvas = null;
@@ -9964,7 +9672,6 @@
       this.zoomUI = null;
       this.isTransitioning = false;
       this.cleanup = null;
-      this.loadingElement = null;
       this.handleResize = () => {
         if (!this.canvas || !this.grid)
           return;
@@ -9981,6 +9688,12 @@
         );
         return;
       }
+      console.log("Found CMS Image element:", firstImage);
+      console.log("Image data attributes:", {
+        bucket: firstImage.dataset.s3Bucket,
+        prefix: firstImage.dataset.s3Prefix,
+        color: firstImage.dataset.color
+      });
       this.s3Config = {
         bucketUrl: firstImage.dataset.s3Bucket || "",
         prefix: firstImage.dataset.s3Prefix || ""
@@ -9988,7 +9701,6 @@
       this.setupStyles();
       this.setupViewportDetection();
       this.createZoomUI();
-      this.createLoadingIndicator();
       gsapWithCSS.set(container, { autoAlpha: 0 });
       console.log("Stored S3 config:", this.s3Config);
     }
@@ -10052,119 +9764,85 @@
       }
 
       .archive-zoom {
-        position: fixed;
-        z-index: 9999;
-        display: flex;
-        pointer-events: auto;
-        transition: transform 0.3s ease;
-        bottom: max(2rem, 5svh);
-        padding-bottom: env(safe-area-inset-bottom, 0px);
-        left: 50%;
-        transform: translateX(-50%);
-        will-change: transform;
-      }
+  position: fixed;
+  z-index: 9999;
+  display: flex;
+  pointer-events: auto;
+  transition: transform 0.3s ease;
+  bottom: max(2rem, 5svh);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  left: 50%;
+  transform: translateX(-50%);
+  will-change: transform;
+}
 
       @supports not (bottom: 5svh) {
-        .archive-zoom {
-          bottom: max(2rem, calc(var(--vh, 1vh) * 5));
-        }
-      }
+  .archive-zoom {
+    bottom: max(2rem, calc(var(--vh, 1vh) * 5));
+  }
+}
 
-      .zoom-button {
-        width: 2.5rem;
-        height: 2.5rem;
-        padding: 0.75rem;
-        background-color: #424242;
-        border: none;
-        cursor: pointer;
-        transition: background-color 0.3s ease;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        border-radius: 0;
-        -webkit-tap-highlight-color: transparent;
-        margin: 0;
-      }
+.zoom-button {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0.75rem;
+  background-color: #424242;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  border-radius: 0;
+  -webkit-tap-highlight-color: transparent;
+  margin: 0;
+}
 
-      .zoom-button svg {
-        width: 100%;
-        height: 100%;
-        display: block;
-      }
+.zoom-button svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
 
-      /* Desktop hover */
-      @media (hover: hover) and (pointer: fine) {
-        .zoom-button:hover {
-          background-color: #2B2B2B;
-        }
-      }
+/* Desktop hover */
+@media (hover: hover) and (pointer: fine) {
+  .zoom-button:hover {
+    background-color: #2B2B2B;
+  }
+}
 
-      /* Touch/click state for all devices */
-      .zoom-button:active {
-        background-color: #2B2B2B;
-      }
+/* Touch/click state for all devices */
+.zoom-button:active {
+  background-color: #2B2B2B;
+}
 
-      /* Loading indicator */
-      .archive-loading {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        color: #ffffff;
-        font-size: 1rem;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-        z-index: 2;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-      }
+/* Responsive zoom button sizes */
+@media (max-width: 1024px) {
+  .zoom-button {
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0.85rem;
+  }
+}
 
-      .archive-loading-spinner {
-        width: 2rem;
-        height: 2rem;
-        border-radius: 50%;
-        border: 2px solid rgba(255, 255, 255, 0.2);
-        border-top-color: #ffffff;
-        animation: archive-spinner 0.8s linear infinite;
-        margin-bottom: 1rem;
-      }
+@media (max-width: 768px) {
+  .zoom-button {
+    width: 3rem;
+    height: 3rem;
+    padding: 0.9rem;
+  }
+  .archive-zoom {
+    bottom: max(2rem, 7svh);
+  }
+}
 
-      @keyframes archive-spinner {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      /* Responsive zoom button sizes */
-      @media (max-width: 1024px) {
-        .zoom-button {
-          width: 2.75rem;
-          height: 2.75rem;
-          padding: 0.85rem;
-        }
-      }
-
-      @media (max-width: 768px) {
-        .zoom-button {
-          width: 3rem;
-          height: 3rem;
-          padding: 0.9rem;
-        }
-        .archive-zoom {
-          bottom: max(2rem, 7svh);
-        }
-      }
-
-      @media (max-width: 479px) {
-        .zoom-button {
-          width: 3.25rem;
-          height: 3.25rem;
-          padding: 1rem;
-        }
-      }
+@media (max-width: 479px) {
+  .zoom-button {
+    width: 3.25rem;
+    height: 3.25rem;
+    padding: 1rem;
+  }
     `;
       document.head.appendChild(style);
     }
@@ -10196,11 +9874,11 @@
       document.body.appendChild(this.zoomUI);
       zoomOutBtn.addEventListener("click", (e) => {
         e.preventDefault();
-        this.handleZoom("out");
+        this.handleZoom(0.8);
       });
       zoomInBtn.addEventListener("click", (e) => {
         e.preventDefault();
-        this.handleZoom("in");
+        this.handleZoom(1.2);
       });
     }
     createZoomButton(type, svg) {
@@ -10211,22 +9889,17 @@
       button.innerHTML = svg;
       return button;
     }
-    createLoadingIndicator() {
-      this.loadingElement = document.createElement("div");
-      this.loadingElement.className = "archive-loading";
-      const spinner = document.createElement("div");
-      spinner.className = "archive-loading-spinner";
-      const text = document.createElement("div");
-      text.textContent = "Loading images...";
-      this.loadingElement.appendChild(spinner);
-      this.loadingElement.appendChild(text);
-      gsapWithCSS.set(this.loadingElement, { autoAlpha: 0 });
-    }
-    handleZoom(action) {
-      if (!this.grid)
+    handleZoom(factor) {
+      if (!this.grid || !this.canvas)
         return;
-      this.grid.zoom(action);
+      const rect = this.canvas.getBoundingClientRect();
+      const center = {
+        x: rect.width / 2,
+        y: rect.height / 2
+      };
+      this.grid.setZoom(factor, center.x, center.y);
     }
+    // In ArchiveView.ts, keep only this version of init()
     async init() {
       try {
         console.log("ArchiveView init started");
@@ -10234,109 +9907,28 @@
         if (!this.s3Config.bucketUrl) {
           throw new Error("No S3 bucket URL provided");
         }
-        await this.initializeContainer();
-        if (this.loadingElement && this.canvas && this.canvas.parentElement) {
-          this.canvas.parentElement.appendChild(this.loadingElement);
-          gsapWithCSS.to(this.loadingElement, { autoAlpha: 1, duration: 0.3 });
-        }
         console.log("Loading images from S3...");
-        this.images = await this.loadImagesFromS3();
-        console.log("Loaded URLs:", this.images.length);
+        const s3Loader = initS3ImageLoader(this.s3Config);
+        this.images = await s3Loader.loadImagesFromBucket();
+        console.log("Loaded URLs:", this.images);
+        console.log("Initializing container");
+        await this.initializeContainer();
         console.log("Initializing grid with image count:", this.images.length);
-        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-        const isMobile = window.matchMedia("(max-width: 768px)").matches || "ontouchstart" in window;
-        const gridOptions = {
-          images: this.images,
-          pixelRatio,
-          columnCount: isMobile ? 4 : 6,
-          rowCount: isMobile ? 4 : 6
-        };
-        if (this.canvas) {
-          this.grid = new ArchiveGrid(this.canvas);
-          console.log("Setting up resize observer");
-          this.setupResizeObserver();
-          await this.grid.init(gridOptions);
-        }
-        if (this.loadingElement) {
-          gsapWithCSS.to(this.loadingElement, {
-            autoAlpha: 0,
-            duration: 0.3,
-            onComplete: () => {
-              this.loadingElement?.remove();
-            }
-          });
-        }
+        await this.initializeGrid();
+        console.log("Setting up resize observer");
+        this.setupResizeObserver();
         this.isTransitioning = false;
         console.log("ArchiveView init completed");
       } catch (error) {
         console.error("Failed to initialize archive view:", error);
-        if (this.loadingElement) {
-          this.loadingElement.innerHTML = `
-          <div>Error loading images</div>
-          <div style="font-size: 0.875rem; opacity: 0.7; margin-top: 0.5rem;">Please try refreshing the page</div>
-        `;
-          gsapWithCSS.to(this.loadingElement, {
-            autoAlpha: 0,
-            duration: 0.3,
-            delay: 3,
-            onComplete: () => {
-              this.loadingElement?.remove();
-            }
-          });
-        }
         throw error;
       }
     }
-    async loadImagesFromS3() {
-      try {
-        const prefix = this.s3Config.prefix ? this.s3Config.prefix.endsWith("/") ? this.s3Config.prefix : `${this.s3Config.prefix}/` : "";
-        console.log("Using prefix:", prefix);
-        const baseUrl = this.s3Config.bucketUrl.endsWith("/") ? this.s3Config.bucketUrl.slice(0, -1) : this.s3Config.bucketUrl;
-        console.log("Using base URL:", baseUrl);
-        const listUrl = `${baseUrl}?list-type=2&prefix=${prefix}&delimiter=/`;
-        console.log("Fetching image list from:", listUrl);
-        const response = await fetch(listUrl, {
-          method: "GET",
-          mode: "cors",
-          headers: {
-            Accept: "*/*"
-          }
-        });
-        console.log("S3 Response status:", response.status);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const xmlText = await response.text();
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-        const contents = xmlDoc.getElementsByTagName("Contents");
-        console.log("Found Contents nodes:", contents.length);
-        const keys = Array.from(contents).map((content) => content.getElementsByTagName("Key")[0]?.textContent).filter((key) => key && /\.(jpg|jpeg|png|webp)$/i.test(key)).filter(Boolean);
-        console.log("Found image keys:", keys.length);
-        const urls = keys.map((key) => `${baseUrl}/${key}`);
-        const isMobile = window.matchMedia("(max-width: 768px)").matches || "ontouchstart" in window;
-        const maxImages = isMobile ? 50 : 100;
-        const shuffledUrls = this.shuffleArray(urls).slice(0, maxImages);
-        console.log(`Using ${shuffledUrls.length} images (limited from ${urls.length})`);
-        return shuffledUrls;
-      } catch (error) {
-        console.error("Failed to load images from S3:", error);
-        return [];
-      }
-    }
-    // Fisher-Yates shuffle algorithm for randomizing the image array
-    shuffleArray(array) {
-      const newArray = [...array];
-      for (let i = newArray.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
-      }
-      return newArray;
-    }
     async initializeContainer() {
-      let archiveContainer = this.container.querySelector(".archive-container");
+      let archiveContainer = this.container.querySelector("#archive-container");
       if (!archiveContainer) {
         archiveContainer = document.createElement("div");
+        archiveContainer.id = "archive-container";
         archiveContainer.className = "archive-container";
         this.container.appendChild(archiveContainer);
       }
@@ -10345,6 +9937,18 @@
         this.canvas.className = "archive-canvas";
         archiveContainer.appendChild(this.canvas);
       }
+    }
+    async initializeGrid() {
+      if (!this.canvas)
+        throw new Error("Canvas not initialized");
+      const isMobile = window.matchMedia("(max-width: 768px)").matches;
+      this.grid = new WebGLGrid(this.canvas);
+      await this.grid.init({
+        images: this.images,
+        columnCount: isMobile ? 2 : 3,
+        rowCount: isMobile ? 3 : 4,
+        pixelRatio: window.devicePixelRatio
+      });
     }
     setupResizeObserver() {
       if (!this.canvas)
@@ -10388,7 +9992,7 @@
       });
       tl.to([this.canvas, this.zoomUI], {
         autoAlpha: 1,
-        stagger: 0.1
+        stagger: 0
       });
     }
     async fadeOut() {
@@ -10427,10 +10031,6 @@
       if (this.zoomUI) {
         this.zoomUI.remove();
         this.zoomUI = null;
-      }
-      if (this.loadingElement) {
-        this.loadingElement.remove();
-        this.loadingElement = null;
       }
       const style = document.querySelector("style[data-archive-styles]");
       if (style)
