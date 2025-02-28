@@ -8987,29 +8987,195 @@
 
   // src/components/ArchiveGrid/TextureManager.ts
   init_live_reload();
-  var TextureManager = class {
-    constructor(gl, deviceSettings) {
-      this.activeLoads = 0;
-      this.maxConcurrentLoads = 3;
-      this.gl = gl;
-      this.textures = /* @__PURE__ */ new Map();
-      this.loadingQueue = [];
-      this.maxConcurrentLoads = deviceSettings.isMobile ? 2 : 4;
-    }
-    // Method to queue a texture for loading with priority
-    queueTexture(url, priority, callback) {
-    }
-    // Method to create a texture from an image
-    createTexture(image, options = {}) {
-    }
-    // Method to release texture resources
-    releaseTexture(url) {
-    }
-    // Other methods for texture management
-  };
 
   // src/components/ArchiveGrid/types.ts
   init_live_reload();
+
+  // src/components/ArchiveGrid/utils.ts
+  init_live_reload();
+  function detectDeviceCapabilities() {
+    const isMobile = window.innerWidth <= 768 || "ontouchstart" in window;
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    const maxTextureSize = isMobile ? 1024 : 2048;
+    const columnCount = isMobile ? 2 : 3;
+    const rowCount = isMobile ? 3 : 4;
+    const dragMultiplier = isMobile ? 4.5 : 2.5;
+    const maxConcurrentLoads = isMobile ? 2 : 4;
+    return {
+      isMobile,
+      pixelRatio,
+      maxTextureSize,
+      columnCount,
+      rowCount,
+      dragMultiplier,
+      maxConcurrentLoads
+    };
+  }
+  function isPowerOf2(value) {
+    return (value & value - 1) === 0;
+  }
+
+  // src/components/ArchiveGrid/TextureManager.ts
+  var TextureManager = class {
+    constructor(gl, deviceSettings) {
+      this.textures = /* @__PURE__ */ new Map();
+      this.imageInfo = /* @__PURE__ */ new Map();
+      this.loadingQueue = [];
+      this.activeLoads = 0;
+      this.maxConcurrentLoads = 3;
+      this.gl = gl;
+      this.deviceSettings = deviceSettings;
+      this.maxConcurrentLoads = deviceSettings.maxConcurrentLoads;
+    }
+    // Method to queue a texture for loading with priority
+    queueTexture(url, priority, callback, isHD = false) {
+      this.loadingQueue.push({ url, priority, callback, isHD });
+      this.loadingQueue.sort((a, b) => a.priority - b.priority);
+      this.processQueue();
+    }
+    // Process the loading queue respecting concurrent load limits
+    processQueue() {
+      if (this.activeLoads >= this.maxConcurrentLoads || this.loadingQueue.length === 0) {
+        return;
+      }
+      const nextItem = this.loadingQueue.shift();
+      if (!nextItem)
+        return;
+      this.activeLoads++;
+      if (this.textures.has(nextItem.url) && this.imageInfo.has(nextItem.url)) {
+        const texture = this.textures.get(nextItem.url);
+        const info = this.imageInfo.get(nextItem.url);
+        nextItem.callback(texture, info);
+        this.activeLoads--;
+        this.processQueue();
+        return;
+      }
+      this.loadImage(nextItem.url, nextItem.isHD).then(({ image, imageInfo }) => {
+        const texture = this.createTexture(image, {
+          useMipmaps: !this.deviceSettings.isMobile && isPowerOf2(image.width) && isPowerOf2(image.height)
+        });
+        this.textures.set(nextItem.url, texture);
+        this.imageInfo.set(nextItem.url, imageInfo);
+        nextItem.callback(texture, imageInfo);
+        this.activeLoads--;
+        this.processQueue();
+      }).catch((error) => {
+        console.error(`Failed to load texture: ${nextItem.url}`, error);
+        this.activeLoads--;
+        this.processQueue();
+      });
+    }
+    // Load an image and return both the image element and its info
+    async loadImage(url, isHD = false) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        const resizedUrl = this.getResizedImageUrl(url, isHD);
+        img.onload = () => {
+          const imageInfo = {
+            url,
+            element: img,
+            width: img.naturalWidth,
+            height: img.naturalHeight,
+            isLoaded: true,
+            isHD,
+            color: "#000000"
+            // Default color, can be updated later
+          };
+          resolve({ image: img, imageInfo });
+        };
+        img.onerror = () => {
+          reject(new Error(`Failed to load image: ${resizedUrl}`));
+        };
+        img.src = resizedUrl;
+      });
+    }
+    // Resize image URL based on device and HD settings
+    getResizedImageUrl(url, isHD) {
+      const urlObj = new URL(url);
+      const params = new URLSearchParams(urlObj.search);
+      const size = isHD ? this.deviceSettings.isMobile ? 1e3 : 1600 : this.deviceSettings.isMobile ? 500 : 800;
+      params.set("h", String(Math.min(size, this.deviceSettings.maxTextureSize)));
+      params.set("q", isHD ? "80" : "60");
+      if (this.supportsWebP()) {
+        params.set("fm", "webp");
+      }
+      urlObj.search = params.toString();
+      return urlObj.toString();
+    }
+    // Check for WebP support
+    supportsWebP() {
+      const canvas = document.createElement("canvas");
+      if (canvas.getContext && canvas.getContext("2d")) {
+        return canvas.toDataURL("image/webp").indexOf("data:image/webp") === 0;
+      }
+      return false;
+    }
+    // Method to create a texture from an image
+    createTexture(image, options = {}) {
+      const { gl } = this;
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      if (!image || image.width === 0) {
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA,
+          1,
+          1,
+          0,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          new Uint8Array([0, 0, 0, 255])
+        );
+      } else {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      }
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, options.wrapS || gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, options.wrapT || gl.CLAMP_TO_EDGE);
+      if (options.useMipmaps && isPowerOf2(image.width) && isPowerOf2(image.height)) {
+        gl.texParameteri(
+          gl.TEXTURE_2D,
+          gl.TEXTURE_MIN_FILTER,
+          options.minFilter || gl.LINEAR_MIPMAP_LINEAR
+        );
+        gl.generateMipmap(gl.TEXTURE_2D);
+      } else {
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, options.minFilter || gl.LINEAR);
+      }
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, options.magFilter || gl.LINEAR);
+      return texture;
+    }
+    // Method to release texture resources
+    releaseTexture(url) {
+      if (this.textures.has(url)) {
+        const texture = this.textures.get(url);
+        this.gl.deleteTexture(texture);
+        this.textures.delete(url);
+        this.imageInfo.delete(url);
+      }
+    }
+    // Method to release all textures
+    releaseAllTextures() {
+      this.textures.forEach((texture) => {
+        this.gl.deleteTexture(texture);
+      });
+      this.textures.clear();
+      this.imageInfo.clear();
+    }
+    // Check if a texture is loaded
+    isTextureLoaded(url) {
+      return this.textures.has(url) && this.imageInfo.has(url);
+    }
+    // Get texture if available
+    getTexture(url) {
+      return this.textures.get(url) || null;
+    }
+    // Get image info if available
+    getImageInfo(url) {
+      return this.imageInfo.get(url) || null;
+    }
+  };
 
   // src/components/ArchiveGrid/GridRenderer.ts
   var GridRenderer = class {
@@ -9068,16 +9234,13 @@
     }
   };
 
-  // src/components/ArchiveGrid/utils.ts
-  init_live_reload();
-
   // src/components/ArchiveGrid/index.ts
   var ArchiveGrid = class {
     constructor(canvas, images) {
       this.isActive = false;
       this.transform = { scale: 1, x: 0, y: 0 };
       this.canvas = canvas;
-      this.deviceSettings = (void 0)();
+      this.deviceSettings = detectDeviceCapabilities();
       this.renderer = new GridRenderer(canvas, this.deviceSettings);
       this.interactionManager = new InteractionManager(canvas, this.transform, this.deviceSettings);
       this.setupGrid(images);
