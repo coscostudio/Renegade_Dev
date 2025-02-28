@@ -9713,13 +9713,10 @@
       this.lastTouchY = 0;
       this.velocity = { x: 0, y: 0 };
       this.animationId = null;
-      this.multiTouchDistance = null;
-      this.multiTouchCenter = null;
       this.isZooming = false;
       this.zoomFactor = 1;
       this.minScale = 0.5;
       this.maxScale = 5;
-      this.pinchStartScale = 1;
       this.transformCallbacks = [];
       this.isActive = true;
       // Handle mouse down events
@@ -9759,26 +9756,9 @@
         e.preventDefault();
         if (e.touches.length === 1) {
           this.isDragging = true;
-          this.isZooming = false;
-          this.multiTouchDistance = null;
-          this.multiTouchCenter = null;
           this.lastTouchX = e.touches[0].clientX;
           this.lastTouchY = e.touches[0].clientY;
           this.velocity = { x: 0, y: 0 };
-        } else if (e.touches.length === 2) {
-          this.isDragging = false;
-          this.isZooming = true;
-          const touch1 = e.touches[0];
-          const touch2 = e.touches[1];
-          this.multiTouchDistance = Math.hypot(
-            touch2.clientX - touch1.clientX,
-            touch2.clientY - touch1.clientY
-          );
-          this.multiTouchCenter = {
-            x: (touch1.clientX + touch2.clientX) / 2,
-            y: (touch1.clientY + touch2.clientY) / 2
-          };
-          this.pinchStartScale = this.transform.scale;
         }
       };
       // Handle touch move events
@@ -9794,23 +9774,6 @@
           this.handleDrag(scaledDeltaX, scaledDeltaY);
           this.lastTouchX = e.touches[0].clientX;
           this.lastTouchY = e.touches[0].clientY;
-        } else if (e.touches.length === 2 && this.isZooming) {
-          const touch1 = e.touches[0];
-          const touch2 = e.touches[1];
-          const newDistance = Math.hypot(
-            touch2.clientX - touch1.clientX,
-            touch2.clientY - touch1.clientY
-          );
-          if (this.multiTouchDistance !== null) {
-            const scaleFactor = newDistance / this.multiTouchDistance;
-            const newCenter = {
-              x: (touch1.clientX + touch2.clientX) / 2,
-              y: (touch1.clientY + touch2.clientY) / 2
-            };
-            if (this.multiTouchCenter !== null) {
-              this.handlePinchZoom(this.pinchStartScale * scaleFactor, newCenter.x, newCenter.y);
-            }
-          }
         }
       };
       // Handle touch end events
@@ -9818,18 +9781,6 @@
         if (!this.isActive)
           return;
         this.isDragging = false;
-        this.isZooming = false;
-        this.multiTouchDistance = null;
-        this.multiTouchCenter = null;
-      };
-      // Handle mouse wheel events for zooming
-      this.handleWheel = (e) => {
-        if (!this.isActive)
-          return;
-        e.preventDefault();
-        const wheelDelta = e.deltaY;
-        const zoomFactor = wheelDelta > 0 ? 0.9 : 1.1;
-        this.zoom(zoomFactor, e.clientX, e.clientY);
       };
       this.canvas = canvas;
       this.transform = { ...transform };
@@ -9837,7 +9788,7 @@
       this.deviceSettings = deviceSettings;
       this.bindEvents();
     }
-    // Bind interaction events (mouse/touch)
+    // Bind interaction events (mouse/touch for dragging only)
     bindEvents() {
       this.canvas.addEventListener("mousedown", this.handleMouseDown);
       window.addEventListener("mousemove", this.handleMouseMove);
@@ -9846,7 +9797,6 @@
       window.addEventListener("touchmove", this.handleTouchMove, { passive: false });
       window.addEventListener("touchend", this.handleTouchEnd);
       window.addEventListener("touchcancel", this.handleTouchEnd);
-      this.canvas.addEventListener("wheel", this.handleWheel, { passive: false });
       this.startAnimationLoop();
     }
     // Handle dragging logic
@@ -9859,36 +9809,26 @@
         y: deltaY * 0.8
       };
     }
-    // Handle pinch zoom
-    handlePinchZoom(newScale, centerX, centerY) {
-      newScale = Math.max(this.minScale, Math.min(this.maxScale, newScale));
-      const rect = this.canvas.getBoundingClientRect();
-      const canvasX = centerX - rect.left;
-      const canvasY = centerY - rect.top;
-      const worldX = (canvasX - this.transform.x) / this.transform.scale;
-      const worldY = (canvasY - this.transform.y) / this.transform.scale;
-      const newX = canvasX - worldX * newScale;
-      const newY = canvasY - worldY * newScale;
-      this.targetTransform.scale = newScale;
-      this.targetTransform.x = newX;
-      this.targetTransform.y = newY;
-    }
-    // Zoom handling with mouse position as the center
+    // Button-based zoom handling
     zoom(factor, originX, originY) {
       const newScale = Math.max(
         this.minScale,
         Math.min(this.maxScale, this.transform.scale * factor)
       );
       const rect = this.canvas.getBoundingClientRect();
-      const canvasX = originX - rect.left;
-      const canvasY = originY - rect.top;
+      const canvasX = originX !== void 0 ? originX - rect.left : rect.width / 2;
+      const canvasY = originY !== void 0 ? originY - rect.top : rect.height / 2;
       const worldX = (canvasX - this.transform.x) / this.transform.scale;
       const worldY = (canvasY - this.transform.y) / this.transform.scale;
       const newX = canvasX - worldX * newScale;
       const newY = canvasY - worldY * newScale;
+      this.isZooming = true;
       this.targetTransform.scale = newScale;
       this.targetTransform.x = newX;
       this.targetTransform.y = newY;
+      setTimeout(() => {
+        this.isZooming = false;
+      }, 500);
     }
     // Update position based on momentum
     update() {
@@ -9973,7 +9913,6 @@
       window.removeEventListener("touchmove", this.handleTouchMove);
       window.removeEventListener("touchend", this.handleTouchEnd);
       window.removeEventListener("touchcancel", this.handleTouchEnd);
-      this.canvas.removeEventListener("wheel", this.handleWheel);
       this.transformCallbacks = [];
       this.isActive = false;
     }
@@ -10015,93 +9954,6 @@
     }
   };
 
-  // src/components/ArchiveView/s3ImageLoader.ts
-  init_live_reload();
-  var S3ImageLoader = class _S3ImageLoader {
-    constructor(config3) {
-      this.imageCache = /* @__PURE__ */ new Map();
-      this.config = config3;
-    }
-    static getInstance(config3) {
-      if (!_S3ImageLoader.instance) {
-        _S3ImageLoader.instance = new _S3ImageLoader(config3);
-      }
-      return _S3ImageLoader.instance;
-    }
-    async preloadBatch(urls, batchSize = 10) {
-      const batches = [];
-      for (let i = 0; i < urls.length; i += batchSize) {
-        batches.push(urls.slice(i, i + batchSize));
-      }
-      return batches.reduce(async (promise, batch) => {
-        await promise;
-        console.log(`Loading batch of ${batch.length} images...`);
-        return Promise.all(batch.map((url) => this.loadImage(url)));
-      }, Promise.resolve());
-    }
-    async loadImagesFromBucket() {
-      try {
-        const prefix = this.config.prefix ? this.config.prefix.endsWith("/") ? this.config.prefix : `${this.config.prefix}/` : "";
-        console.log("Using prefix:", prefix);
-        const baseUrl = this.config.bucketUrl.endsWith("/") ? this.config.bucketUrl.slice(0, -1) : this.config.bucketUrl;
-        console.log("Using base URL:", baseUrl);
-        const listUrl = `${baseUrl}?list-type=2&prefix=${prefix}&delimiter=/`;
-        console.log("Fetching from:", listUrl);
-        const response = await fetch(listUrl, {
-          method: "GET",
-          mode: "cors",
-          headers: {
-            Accept: "*/*"
-          }
-        });
-        console.log("S3 Response:", {
-          status: response.status,
-          statusText: response.statusText,
-          headers: Object.fromEntries(response.headers)
-        });
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const xmlText = await response.text();
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-        const contents = xmlDoc.getElementsByTagName("Contents");
-        console.log("Found Contents nodes:", contents.length);
-        const keys = Array.from(contents).map((content) => content.getElementsByTagName("Key")[0]?.textContent).filter((key) => key && /\.(jpg|jpeg|png|webp)$/i.test(key)).filter(Boolean);
-        console.log("Found S3 keys:", keys);
-        const urls = keys.map((key) => `${baseUrl}/${key}`);
-        console.log("Generated image URLs:", urls);
-        this.preloadBatch(urls).catch(console.error);
-        return urls;
-      } catch (error) {
-        console.error("Failed to load images from S3:", error);
-        return [];
-      }
-    }
-    async loadImage(url) {
-      if (this.imageCache.has(url))
-        return;
-      return new Promise((resolve) => {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.onload = () => {
-          console.log(`Successfully loaded: ${url}`);
-          this.imageCache.set(url, url);
-          resolve();
-        };
-        img.onerror = () => {
-          console.error(`Failed to load image: ${url}`);
-          resolve();
-        };
-        img.src = url;
-      });
-    }
-    cleanup() {
-      this.imageCache.clear();
-    }
-  };
-  var initS3ImageLoader = (config3) => S3ImageLoader.getInstance(config3);
-
   // src/components/ArchiveView/ArchiveView.ts
   var ArchiveView = class {
     constructor(container) {
@@ -10112,6 +9964,7 @@
       this.zoomUI = null;
       this.isTransitioning = false;
       this.cleanup = null;
+      this.loadingElement = null;
       this.handleResize = () => {
         if (!this.canvas || !this.grid)
           return;
@@ -10135,6 +9988,7 @@
       this.setupStyles();
       this.setupViewportDetection();
       this.createZoomUI();
+      this.createLoadingIndicator();
       gsapWithCSS.set(container, { autoAlpha: 0 });
       console.log("Stored S3 config:", this.s3Config);
     }
@@ -10251,6 +10105,39 @@
         background-color: #2B2B2B;
       }
 
+      /* Loading indicator */
+      .archive-loading {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: #ffffff;
+        font-size: 1rem;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+
+      .archive-loading-spinner {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        border-top-color: #ffffff;
+        animation: archive-spinner 0.8s linear infinite;
+        margin-bottom: 1rem;
+      }
+
+      @keyframes archive-spinner {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
       /* Responsive zoom button sizes */
       @media (max-width: 1024px) {
         .zoom-button {
@@ -10324,6 +10211,17 @@
       button.innerHTML = svg;
       return button;
     }
+    createLoadingIndicator() {
+      this.loadingElement = document.createElement("div");
+      this.loadingElement.className = "archive-loading";
+      const spinner = document.createElement("div");
+      spinner.className = "archive-loading-spinner";
+      const text = document.createElement("div");
+      text.textContent = "Loading images...";
+      this.loadingElement.appendChild(spinner);
+      this.loadingElement.appendChild(text);
+      gsapWithCSS.set(this.loadingElement, { autoAlpha: 0 });
+    }
     handleZoom(action) {
       if (!this.grid)
         return;
@@ -10336,37 +10234,109 @@
         if (!this.s3Config.bucketUrl) {
           throw new Error("No S3 bucket URL provided");
         }
-        console.log("Loading images from S3...");
-        const s3Loader = initS3ImageLoader(this.s3Config);
-        this.images = await s3Loader.loadImagesFromBucket();
-        console.log("Loaded URLs:", this.images);
-        console.log("Initializing container");
         await this.initializeContainer();
-        console.log("Initializing grid with image count:", this.images.length);
-        const pixelRatio = Math.min(window.devicePixelRatio, 2);
-        const isMobile = window.matchMedia("(max-width: 768px)").matches || "ontouchstart" in window;
-        if (this.canvas) {
-          this.grid = new ArchiveGrid(this.canvas, {
-            images: this.images,
-            isMobile,
-            pixelRatio
-          });
-          this.grid.start();
+        if (this.loadingElement && this.canvas && this.canvas.parentElement) {
+          this.canvas.parentElement.appendChild(this.loadingElement);
+          gsapWithCSS.to(this.loadingElement, { autoAlpha: 1, duration: 0.3 });
         }
-        console.log("Setting up resize observer");
-        this.setupResizeObserver();
+        console.log("Loading images from S3...");
+        this.images = await this.loadImagesFromS3();
+        console.log("Loaded URLs:", this.images.length);
+        console.log("Initializing grid with image count:", this.images.length);
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+        const isMobile = window.matchMedia("(max-width: 768px)").matches || "ontouchstart" in window;
+        const gridOptions = {
+          images: this.images,
+          pixelRatio,
+          columnCount: isMobile ? 4 : 6,
+          rowCount: isMobile ? 4 : 6
+        };
+        if (this.canvas) {
+          this.grid = new ArchiveGrid(this.canvas);
+          console.log("Setting up resize observer");
+          this.setupResizeObserver();
+          await this.grid.init(gridOptions);
+        }
+        if (this.loadingElement) {
+          gsapWithCSS.to(this.loadingElement, {
+            autoAlpha: 0,
+            duration: 0.3,
+            onComplete: () => {
+              this.loadingElement?.remove();
+            }
+          });
+        }
         this.isTransitioning = false;
         console.log("ArchiveView init completed");
       } catch (error) {
         console.error("Failed to initialize archive view:", error);
+        if (this.loadingElement) {
+          this.loadingElement.innerHTML = `
+          <div>Error loading images</div>
+          <div style="font-size: 0.875rem; opacity: 0.7; margin-top: 0.5rem;">Please try refreshing the page</div>
+        `;
+          gsapWithCSS.to(this.loadingElement, {
+            autoAlpha: 0,
+            duration: 0.3,
+            delay: 3,
+            onComplete: () => {
+              this.loadingElement?.remove();
+            }
+          });
+        }
         throw error;
       }
     }
+    async loadImagesFromS3() {
+      try {
+        const prefix = this.s3Config.prefix ? this.s3Config.prefix.endsWith("/") ? this.s3Config.prefix : `${this.s3Config.prefix}/` : "";
+        console.log("Using prefix:", prefix);
+        const baseUrl = this.s3Config.bucketUrl.endsWith("/") ? this.s3Config.bucketUrl.slice(0, -1) : this.s3Config.bucketUrl;
+        console.log("Using base URL:", baseUrl);
+        const listUrl = `${baseUrl}?list-type=2&prefix=${prefix}&delimiter=/`;
+        console.log("Fetching image list from:", listUrl);
+        const response = await fetch(listUrl, {
+          method: "GET",
+          mode: "cors",
+          headers: {
+            Accept: "*/*"
+          }
+        });
+        console.log("S3 Response status:", response.status);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const xmlText = await response.text();
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+        const contents = xmlDoc.getElementsByTagName("Contents");
+        console.log("Found Contents nodes:", contents.length);
+        const keys = Array.from(contents).map((content) => content.getElementsByTagName("Key")[0]?.textContent).filter((key) => key && /\.(jpg|jpeg|png|webp)$/i.test(key)).filter(Boolean);
+        console.log("Found image keys:", keys.length);
+        const urls = keys.map((key) => `${baseUrl}/${key}`);
+        const isMobile = window.matchMedia("(max-width: 768px)").matches || "ontouchstart" in window;
+        const maxImages = isMobile ? 50 : 100;
+        const shuffledUrls = this.shuffleArray(urls).slice(0, maxImages);
+        console.log(`Using ${shuffledUrls.length} images (limited from ${urls.length})`);
+        return shuffledUrls;
+      } catch (error) {
+        console.error("Failed to load images from S3:", error);
+        return [];
+      }
+    }
+    // Fisher-Yates shuffle algorithm for randomizing the image array
+    shuffleArray(array) {
+      const newArray = [...array];
+      for (let i = newArray.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+      }
+      return newArray;
+    }
     async initializeContainer() {
-      let archiveContainer = this.container.querySelector("#archive-container");
+      let archiveContainer = this.container.querySelector(".archive-container");
       if (!archiveContainer) {
         archiveContainer = document.createElement("div");
-        archiveContainer.id = "archive-container";
         archiveContainer.className = "archive-container";
         this.container.appendChild(archiveContainer);
       }
@@ -10408,6 +10378,7 @@
         visibility: "visible"
         // Set visibility here to prevent layout shifts
       });
+      this.grid.start();
       const tl = gsapWithCSS.timeline({
         defaults: {
           duration: 1,
@@ -10417,7 +10388,7 @@
       });
       tl.to([this.canvas, this.zoomUI], {
         autoAlpha: 1,
-        stagger: 0
+        stagger: 0.1
       });
     }
     async fadeOut() {
@@ -10456,6 +10427,10 @@
       if (this.zoomUI) {
         this.zoomUI.remove();
         this.zoomUI = null;
+      }
+      if (this.loadingElement) {
+        this.loadingElement.remove();
+        this.loadingElement = null;
       }
       const style = document.querySelector("style[data-archive-styles]");
       if (style)

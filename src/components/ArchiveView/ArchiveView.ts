@@ -1,7 +1,7 @@
 import { gsap } from 'gsap';
 
-import { ArchiveGrid } from './ArchiveGrid';
-import { GridOptions } from './types';
+import { ArchiveGrid } from '../ArchiveGrid';
+import { GridOptions } from '../ArchiveGrid/types';
 
 interface S3Config {
   bucketUrl: string;

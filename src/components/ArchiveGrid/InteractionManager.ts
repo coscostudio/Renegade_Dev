@@ -13,13 +13,10 @@ export class InteractionManager {
   private velocity: { x: number; y: number } = { x: 0, y: 0 };
   private targetTransform: Transform;
   private animationId: number | null = null;
-  private multiTouchDistance: number | null = null;
-  private multiTouchCenter: { x: number; y: number } | null = null;
   private isZooming: boolean = false;
   private zoomFactor: number = 1;
   private minScale: number = 0.5;
   private maxScale: number = 5;
-  private pinchStartScale: number = 1;
   private transformCallbacks: ((transform: Transform) => void)[] = [];
   private isActive: boolean = true;
 
@@ -31,21 +28,18 @@ export class InteractionManager {
     this.bindEvents();
   }
 
-  // Bind interaction events (mouse/touch)
+  // Bind interaction events (mouse/touch for dragging only)
   private bindEvents(): void {
-    // Mouse events
+    // Mouse events for dragging
     this.canvas.addEventListener('mousedown', this.handleMouseDown);
     window.addEventListener('mousemove', this.handleMouseMove);
     window.addEventListener('mouseup', this.handleMouseUp);
 
-    // Touch events
+    // Touch events for dragging (no pinch zoom)
     this.canvas.addEventListener('touchstart', this.handleTouchStart, { passive: false });
     window.addEventListener('touchmove', this.handleTouchMove, { passive: false });
     window.addEventListener('touchend', this.handleTouchEnd);
     window.addEventListener('touchcancel', this.handleTouchEnd);
-
-    // Mouse wheel zoom
-    this.canvas.addEventListener('wheel', this.handleWheel, { passive: false });
 
     // Start animation loop
     this.startAnimationLoop();
@@ -109,35 +103,12 @@ export class InteractionManager {
     if (e.touches.length === 1) {
       // Single touch = drag
       this.isDragging = true;
-      this.isZooming = false;
-      this.multiTouchDistance = null;
-      this.multiTouchCenter = null;
 
       this.lastTouchX = e.touches[0].clientX;
       this.lastTouchY = e.touches[0].clientY;
 
       // Reset velocity
       this.velocity = { x: 0, y: 0 };
-    } else if (e.touches.length === 2) {
-      // Double touch = pinch zoom
-      this.isDragging = false;
-      this.isZooming = true;
-
-      // Calculate initial pinch distance and center
-      const touch1 = e.touches[0];
-      const touch2 = e.touches[1];
-
-      this.multiTouchDistance = Math.hypot(
-        touch2.clientX - touch1.clientX,
-        touch2.clientY - touch1.clientY
-      );
-
-      this.multiTouchCenter = {
-        x: (touch1.clientX + touch2.clientX) / 2,
-        y: (touch1.clientY + touch2.clientY) / 2,
-      };
-
-      this.pinchStartScale = this.transform.scale;
     }
   };
 
@@ -163,32 +134,6 @@ export class InteractionManager {
       // Track last position
       this.lastTouchX = e.touches[0].clientX;
       this.lastTouchY = e.touches[0].clientY;
-    } else if (e.touches.length === 2 && this.isZooming) {
-      // Pinch zoom
-      const touch1 = e.touches[0];
-      const touch2 = e.touches[1];
-
-      // Calculate new distance
-      const newDistance = Math.hypot(
-        touch2.clientX - touch1.clientX,
-        touch2.clientY - touch1.clientY
-      );
-
-      if (this.multiTouchDistance !== null) {
-        // Calculate zoom factor
-        const scaleFactor = newDistance / this.multiTouchDistance;
-
-        // Calculate new center point
-        const newCenter = {
-          x: (touch1.clientX + touch2.clientX) / 2,
-          y: (touch1.clientY + touch2.clientY) / 2,
-        };
-
-        // Apply zoom
-        if (this.multiTouchCenter !== null) {
-          this.handlePinchZoom(this.pinchStartScale * scaleFactor, newCenter.x, newCenter.y);
-        }
-      }
     }
   };
 
@@ -198,24 +143,6 @@ export class InteractionManager {
 
     // End all touch interactions
     this.isDragging = false;
-    this.isZooming = false;
-    this.multiTouchDistance = null;
-    this.multiTouchCenter = null;
-  };
-
-  // Handle mouse wheel events for zooming
-  private handleWheel = (e: WheelEvent): void => {
-    if (!this.isActive) return;
-
-    // Prevent default to avoid page scrolling
-    e.preventDefault();
-
-    // Calculate zoom factor based on wheel delta
-    const wheelDelta = e.deltaY;
-    const zoomFactor = wheelDelta > 0 ? 0.9 : 1.1;
-
-    // Apply zoom centered on mouse position
-    this.zoom(zoomFactor, e.clientX, e.clientY);
   };
 
   // Handle dragging logic
@@ -231,33 +158,7 @@ export class InteractionManager {
     };
   }
 
-  // Handle pinch zoom
-  private handlePinchZoom(newScale: number, centerX: number, centerY: number): void {
-    // Clamp scale
-    newScale = Math.max(this.minScale, Math.min(this.maxScale, newScale));
-
-    // Get the canvas rect
-    const rect = this.canvas.getBoundingClientRect();
-
-    // Convert center to canvas coordinates
-    const canvasX = centerX - rect.left;
-    const canvasY = centerY - rect.top;
-
-    // Calculate the point in world space before scaling
-    const worldX = (canvasX - this.transform.x) / this.transform.scale;
-    const worldY = (canvasY - this.transform.y) / this.transform.scale;
-
-    // Calculate the new position to keep the point under the pointer
-    const newX = canvasX - worldX * newScale;
-    const newY = canvasY - worldY * newScale;
-
-    // Update target transform
-    this.targetTransform.scale = newScale;
-    this.targetTransform.x = newX;
-    this.targetTransform.y = newY;
-  }
-
-  // Zoom handling with mouse position as the center
+  // Button-based zoom handling
   public zoom(factor: number, originX: number, originY: number): void {
     // Calculate new scale
     const newScale = Math.max(
@@ -268,9 +169,9 @@ export class InteractionManager {
     // Get canvas rect
     const rect = this.canvas.getBoundingClientRect();
 
-    // Convert origin to canvas coordinates
-    const canvasX = originX - rect.left;
-    const canvasY = originY - rect.top;
+    // Convert origin to canvas coordinates (using center if not provided)
+    const canvasX = originX !== undefined ? originX - rect.left : rect.width / 2;
+    const canvasY = originY !== undefined ? originY - rect.top : rect.height / 2;
 
     // Calculate the point in world space before scaling
     const worldX = (canvasX - this.transform.x) / this.transform.scale;
@@ -280,10 +181,18 @@ export class InteractionManager {
     const newX = canvasX - worldX * newScale;
     const newY = canvasY - worldY * newScale;
 
+    // Set flag for animation handling
+    this.isZooming = true;
+
     // Update target transform with easing
     this.targetTransform.scale = newScale;
     this.targetTransform.x = newX;
     this.targetTransform.y = newY;
+
+    // Reset this flag after a short delay
+    setTimeout(() => {
+      this.isZooming = false;
+    }, 500);
   }
 
   // Update position based on momentum
@@ -393,8 +302,6 @@ export class InteractionManager {
     window.removeEventListener('touchmove', this.handleTouchMove);
     window.removeEventListener('touchend', this.handleTouchEnd);
     window.removeEventListener('touchcancel', this.handleTouchEnd);
-
-    this.canvas.removeEventListener('wheel', this.handleWheel);
 
     // Clear callbacks
     this.transformCallbacks = [];
