@@ -8973,10 +8973,141 @@
     await Promise.all(promises);
   }
 
-  // src/components/WebGLGrid/ArchiveView.ts
+  // src/components/ArchiveView/index.ts
   init_live_reload();
 
-  // src/components/WebGLGrid/s3ImageLoader.ts
+  // src/components/ArchiveView/ArchiveView.ts
+  init_live_reload();
+
+  // src/components/ArchiveGrid/index.ts
+  init_live_reload();
+
+  // src/components/ArchiveGrid/GridRenderer.ts
+  init_live_reload();
+
+  // src/components/ArchiveGrid/TextureManager.ts
+  init_live_reload();
+  var TextureManager = class {
+    constructor(gl, deviceSettings) {
+      this.activeLoads = 0;
+      this.maxConcurrentLoads = 3;
+      this.gl = gl;
+      this.textures = /* @__PURE__ */ new Map();
+      this.loadingQueue = [];
+      this.maxConcurrentLoads = deviceSettings.isMobile ? 2 : 4;
+    }
+    // Method to queue a texture for loading with priority
+    queueTexture(url, priority, callback) {
+    }
+    // Method to create a texture from an image
+    createTexture(image, options = {}) {
+    }
+    // Method to release texture resources
+    releaseTexture(url) {
+    }
+    // Other methods for texture management
+  };
+
+  // src/components/ArchiveGrid/types.ts
+  init_live_reload();
+
+  // src/components/ArchiveGrid/GridRenderer.ts
+  var GridRenderer = class {
+    constructor(canvas, deviceSettings) {
+      this.gridItems = [];
+      this.gl = canvas.getContext("webgl", {
+        antialias: true,
+        premultipliedAlpha: false
+      });
+      this.deviceSettings = deviceSettings;
+      this.initWebGL();
+      this.textureManager = new TextureManager(this.gl, deviceSettings);
+    }
+    // Initialize WebGL context, shaders, etc.
+    initWebGL() {
+    }
+    // Set up the grid with proper dimensions
+    setupGrid(options) {
+    }
+    // Update visibility of grid items based on viewport
+    updateVisibility(transform) {
+    }
+    // Draw the grid to the canvas
+    draw(transform) {
+    }
+    // Clean up resources
+    destroy() {
+    }
+  };
+
+  // src/components/ArchiveGrid/InteractionManager.ts
+  init_live_reload();
+  var InteractionManager = class {
+    constructor(canvas, transform, deviceSettings) {
+      this.isDragging = false;
+      this.velocity = { x: 0, y: 0 };
+      this.canvas = canvas;
+      this.transform = transform;
+      this.deviceSettings = deviceSettings;
+      this.bindEvents();
+    }
+    // Bind interaction events (mouse/touch)
+    bindEvents() {
+    }
+    // Handle dragging logic
+    handleDrag(deltaX, deltaY) {
+    }
+    // Update position based on momentum
+    update() {
+    }
+    // Zoom handling
+    zoom(factor, originX, originY) {
+    }
+    // Clean up
+    destroy() {
+    }
+  };
+
+  // src/components/ArchiveGrid/utils.ts
+  init_live_reload();
+
+  // src/components/ArchiveGrid/index.ts
+  var ArchiveGrid = class {
+    constructor(canvas, images) {
+      this.isActive = false;
+      this.transform = { scale: 1, x: 0, y: 0 };
+      this.canvas = canvas;
+      this.deviceSettings = (void 0)();
+      this.renderer = new GridRenderer(canvas, this.deviceSettings);
+      this.interactionManager = new InteractionManager(canvas, this.transform, this.deviceSettings);
+      this.setupGrid(images);
+    }
+    // Initialize the grid with images
+    setupGrid(images) {
+    }
+    // Start rendering
+    start() {
+      this.isActive = true;
+      this.render();
+    }
+    // Main render loop
+    render() {
+      if (!this.isActive)
+        return;
+      this.interactionManager.update();
+      this.renderer.updateVisibility(this.transform);
+      this.renderer.draw(this.transform);
+      requestAnimationFrame(() => this.render());
+    }
+    // Clean up resources
+    destroy() {
+      this.isActive = false;
+      this.interactionManager.destroy();
+      this.renderer.destroy();
+    }
+  };
+
+  // src/components/ArchiveView/s3ImageLoader.ts
   init_live_reload();
   var S3ImageLoader = class _S3ImageLoader {
     constructor(config3) {
@@ -9063,606 +9194,7 @@
   };
   var initS3ImageLoader = (config3) => S3ImageLoader.getInstance(config3);
 
-  // src/components/WebGLGrid/WebGLGrid.ts
-  init_live_reload();
-
-  // src/components/WebGLGrid/types.ts
-  init_live_reload();
-
-  // src/components/WebGLGrid/WebGLGrid.ts
-  var WebGLGrid = class {
-    constructor(canvas) {
-      this.images = [];
-      this.textures = /* @__PURE__ */ new Map();
-      this.gridItems = [];
-      this.isInitialized = false;
-      this.isActive = false;
-      this.isDragging = false;
-      this.lastMouseX = 0;
-      this.lastMouseY = 0;
-      this.lastTouchX = 0;
-      this.lastTouchY = 0;
-      this.isZooming = false;
-      this.zoomAnimation = null;
-      this.momentum = { x: 0, y: 0 };
-      this.targetX = 0;
-      this.targetY = 0;
-      this.multiplier = 2.5;
-      this.viewportCenter = { x: 0, y: 0 };
-      this.maxScale = 18;
-      this.minScale = 0.6;
-      this.maxImageWidth = 0.6;
-      this.lastFrameItems = /* @__PURE__ */ new Map();
-      this.frameCount = 0;
-      this.viewTransform = {
-        scale: 1,
-        x: 0,
-        y: 0
-      };
-      this.vertexShader = `
-    attribute vec4 a_position;
-    attribute vec2 a_texCoord;
-    uniform mat4 u_matrix;
-    varying vec2 v_texCoord;
-    void main() {
-      gl_Position = u_matrix * a_position;
-      v_texCoord = a_texCoord;
-    }
-  `;
-      this.fragmentShader = `
-    precision mediump float;
-    uniform sampler2D u_texture;
-    uniform float u_opacity;
-    varying vec2 v_texCoord;
-    void main() {
-      vec4 texColor = texture2D(u_texture, v_texCoord);
-      gl_FragColor = vec4(texColor.rgb, texColor.a * u_opacity);
-    }
-  `;
-      this.render = () => {
-        if (!this.isActive || !this.isInitialized)
-          return;
-        this.updatePosition();
-        this.draw();
-        requestAnimationFrame(this.render);
-      };
-      this.updateCanvasSize(canvas);
-      this.gl = canvas.getContext("webgl", {
-        alpha: true,
-        antialias: true,
-        premultipliedAlpha: false
-      });
-      if (!this.gl) {
-        throw new Error("WebGL not supported");
-      }
-      this.setupWebGL();
-      this.bindEvents(canvas);
-      this.initMultiplier();
-      this.updateViewportCenter();
-    }
-    isTabletViewport() {
-      const { width } = this.gl.canvas.getBoundingClientRect();
-      return width > 768 && width <= 1024;
-    }
-    isMobileViewport() {
-      const { width } = this.gl.canvas.getBoundingClientRect();
-      return width <= 768 || "ontouchstart" in window;
-    }
-    getResponsiveZoomLevels() {
-      const isMobile = this.isMobileViewport();
-      const isTablet = this.isTabletViewport();
-      if (isMobile)
-        return [1, 2, 5, 9, 18];
-      if (isTablet)
-        return [0.9, 1.5, 3.75, 7.5, 15];
-      return [0.6, 1, 3, 6, 12];
-    }
-    getResponsiveMaxScale() {
-      const zoomLevels = this.getResponsiveZoomLevels();
-      return zoomLevels[zoomLevels.length - 1];
-    }
-    getNextZoomLevel(factor) {
-      const zoomLevels = this.getResponsiveZoomLevels();
-      const currentScale = this.viewTransform.scale;
-      if (factor > 1) {
-        for (const level of zoomLevels) {
-          if (level > currentScale + 0.1) {
-            return level;
-          }
-        }
-        return zoomLevels[zoomLevels.length - 1];
-      }
-      for (let i = zoomLevels.length - 1; i >= 0; i--) {
-        if (zoomLevels[i] < currentScale - 0.1) {
-          return zoomLevels[i];
-        }
-      }
-      return zoomLevels[0];
-    }
-    initMultiplier() {
-      const { width } = this.gl.canvas.getBoundingClientRect();
-      this.multiplier = width <= 768 || "ontouchstart" in window ? 4.5 : 2.5;
-    }
-    updateCanvasSize(canvas) {
-      const pixelRatio = window.devicePixelRatio;
-      const rect = canvas.getBoundingClientRect();
-      canvas.style.width = "100%";
-      canvas.style.height = "100%";
-      canvas.width = rect.width * pixelRatio;
-      canvas.height = rect.height * pixelRatio;
-    }
-    updateViewportCenter() {
-      const { width, height } = this.gl.canvas;
-      this.viewportCenter = {
-        x: width / 2,
-        y: height / 2
-      };
-    }
-    setupWebGL() {
-      const { gl } = this;
-      const vertShader = this.createShader(this.vertexShader, gl.VERTEX_SHADER);
-      const fragShader = this.createShader(this.fragmentShader, gl.FRAGMENT_SHADER);
-      this.program = this.createProgram(vertShader, fragShader);
-      this.locations = {
-        position: gl.getAttribLocation(this.program, "a_position"),
-        texCoord: gl.getAttribLocation(this.program, "a_texCoord"),
-        matrix: gl.getUniformLocation(this.program, "u_matrix"),
-        texture: gl.getUniformLocation(this.program, "u_texture"),
-        opacity: gl.getUniformLocation(this.program, "u_opacity")
-      };
-      this.buffers = {
-        position: gl.createBuffer(),
-        texCoord: gl.createBuffer()
-      };
-      const positions = new Float32Array([0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1]);
-      const texCoords = new Float32Array([0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0]);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
-      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoord);
-      gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-      gl.enable(gl.DEPTH_TEST);
-      gl.depthFunc(gl.LEQUAL);
-      gl.clearColor(0.059, 0.059, 0.059, 1);
-    }
-    createShader(source, type) {
-      const shader = this.gl.createShader(type);
-      this.gl.shaderSource(shader, source);
-      this.gl.compileShader(shader);
-      if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
-        throw new Error(`Shader compile error: ${this.gl.getShaderInfoLog(shader)}`);
-      }
-      return shader;
-    }
-    createProgram(vertShader, fragShader) {
-      const program = this.gl.createProgram();
-      this.gl.attachShader(program, vertShader);
-      this.gl.attachShader(program, fragShader);
-      this.gl.linkProgram(program);
-      if (!this.gl.getProgramParameter(program, this.gl.LINK_STATUS)) {
-        throw new Error(`Program link error: ${this.gl.getProgramInfoLog(program)}`);
-      }
-      return program;
-    }
-    bindEvents(canvas) {
-      const boundMouseDown = this.handleMouseDown.bind(this);
-      const boundMouseMove = this.handleMouseMove.bind(this);
-      const boundMouseUp = this.handleMouseUp.bind(this);
-      const boundTouchStart = this.handleTouchStart.bind(this);
-      const boundTouchMove = this.handleTouchMove.bind(this);
-      const boundTouchEnd = this.handleTouchEnd.bind(this);
-      canvas.addEventListener("mousedown", boundMouseDown);
-      window.addEventListener("mousemove", boundMouseMove);
-      window.addEventListener("mouseup", boundMouseUp);
-      canvas.addEventListener("touchstart", boundTouchStart, { passive: false });
-      window.addEventListener("touchmove", boundTouchMove, { passive: false });
-      window.addEventListener("touchend", boundTouchEnd);
-      this.boundEvents = {
-        mouseDown: boundMouseDown,
-        mouseMove: boundMouseMove,
-        mouseUp: boundMouseUp,
-        touchStart: boundTouchStart,
-        touchMove: boundTouchMove,
-        touchEnd: boundTouchEnd
-      };
-      canvas.addEventListener("wheel", (e) => e.preventDefault(), { passive: false });
-    }
-    handleMouseDown(e) {
-      this.isDragging = true;
-      this.lastMouseX = e.clientX;
-      this.lastMouseY = e.clientY;
-      this.momentum = { x: 0, y: 0 };
-      this.targetX = this.viewTransform.x;
-      this.targetY = this.viewTransform.y;
-      const canvas = e.target;
-      canvas.style.cursor = "grabbing";
-    }
-    handleMouseMove(e) {
-      if (!this.isDragging)
-        return;
-      const deltaX = (e.clientX - this.lastMouseX) * this.multiplier;
-      const deltaY = (e.clientY - this.lastMouseY) * this.multiplier;
-      this.handleDrag(deltaX, deltaY);
-      this.lastMouseX = e.clientX;
-      this.lastMouseY = e.clientY;
-    }
-    handleMouseUp() {
-      this.isDragging = false;
-      const canvas = this.gl.canvas;
-      canvas.style.cursor = "grab";
-    }
-    handleTouchStart(e) {
-      e.preventDefault();
-      if (e.touches.length === 1) {
-        this.isDragging = true;
-        this.lastMouseX = e.touches[0].clientX;
-        this.lastMouseY = e.touches[0].clientY;
-        this.momentum = { x: 0, y: 0 };
-        this.targetX = this.viewTransform.x;
-        this.targetY = this.viewTransform.y;
-      }
-    }
-    handleTouchMove(e) {
-      e.preventDefault();
-      if (!this.isDragging || e.touches.length !== 1)
-        return;
-      const deltaX = (e.touches[0].clientX - this.lastMouseX) * this.multiplier;
-      const deltaY = (e.touches[0].clientY - this.lastMouseY) * this.multiplier;
-      this.handleDrag(deltaX, deltaY);
-      this.lastMouseX = e.touches[0].clientX;
-      this.lastMouseY = e.touches[0].clientY;
-    }
-    handleTouchEnd() {
-      this.isDragging = false;
-    }
-    handleDrag(deltaX, deltaY) {
-      this.targetX += deltaX;
-      this.targetY += deltaY;
-      this.momentum = {
-        x: deltaX,
-        y: deltaY
-      };
-    }
-    updatePosition() {
-      if (this.isZooming)
-        return;
-      const easing = 0.085;
-      if (!this.isDragging) {
-        const friction = 0.95;
-        this.momentum.x *= friction;
-        this.momentum.y *= friction;
-        if (Math.abs(this.momentum.x) > 0.01 || Math.abs(this.momentum.y) > 0.01) {
-          this.targetX += this.momentum.x;
-          this.targetY += this.momentum.y;
-        }
-      }
-      const dx = this.targetX - this.viewTransform.x;
-      const dy = this.targetY - this.viewTransform.y;
-      if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
-        this.viewTransform.x += dx * easing;
-        this.viewTransform.y += dy * easing;
-      } else {
-        this.viewTransform.x = this.targetX;
-        this.viewTransform.y = this.targetY;
-      }
-      this.viewTransform.x = Math.round(this.viewTransform.x * 100) / 100;
-      this.viewTransform.y = Math.round(this.viewTransform.y * 100) / 100;
-      this.updateGridPositions();
-    }
-    async loadImages(imageUrls) {
-      const loadPromises = imageUrls.map((url) => {
-        return new Promise((resolve, reject) => {
-          const img = new Image();
-          img.crossOrigin = "anonymous";
-          img.onload = () => {
-            const texture = this.createTexture(img);
-            this.textures.set(url, texture);
-            resolve({
-              url,
-              element: img,
-              width: img.naturalWidth,
-              height: img.naturalHeight,
-              color: "#000000"
-            });
-          };
-          img.onerror = reject;
-          img.src = url;
-        });
-      });
-      this.images = await Promise.all(loadPromises);
-    }
-    createTexture(image) {
-      const { gl } = this;
-      const texture = gl.createTexture();
-      const canvas = document.createElement("canvas");
-      const size = Math.pow(2, Math.ceil(Math.log2(Math.max(image.width, image.height))));
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(image, 0, 0, image.width, image.height, 0, 0, size, size);
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      return texture;
-    }
-    calculateImageDimensions(image, containerWidth, containerHeight) {
-      const imageAspect = image.width / image.height;
-      const containerAspect = containerWidth / containerHeight;
-      const maxWidth = containerWidth * this.maxImageWidth;
-      let width;
-      let height;
-      if (imageAspect > containerAspect) {
-        width = Math.min(containerWidth, maxWidth);
-        height = width / imageAspect;
-      } else {
-        height = containerHeight;
-        width = Math.min(height * imageAspect, maxWidth);
-      }
-      const offsetY = 0;
-      return { width, height, offsetY };
-    }
-    calculateGridDimensions(options) {
-      const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
-      const maxItemWidth = canvasWidth * this.maxImageWidth;
-      const itemWidth = Math.min(maxItemWidth, canvasWidth / (options.columnCount + 1));
-      const itemHeight = itemWidth * 0.75;
-      const padding = itemWidth * 0.6;
-      const zoomBuffer = 12;
-      const minColumns = Math.ceil(canvasWidth / (itemWidth + padding)) + zoomBuffer;
-      const minRows = Math.ceil(canvasHeight / (itemHeight + padding)) + zoomBuffer;
-      this.dimensions = {
-        itemWidth,
-        itemHeight,
-        padding,
-        columnCount: Math.max(options.columnCount, minColumns),
-        rowCount: Math.max(options.rowCount, minRows),
-        totalWidth: Math.max(options.columnCount, minColumns) * (itemWidth + padding),
-        totalHeight: Math.max(options.rowCount, minRows) * (itemHeight + padding)
-      };
-    }
-    createBaseGrid(imageCount, columnsPerGrid) {
-      const sequence = Array.from({ length: imageCount }, (_, i) => i);
-      for (let i = sequence.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [sequence[i], sequence[j]] = [sequence[j], sequence[i]];
-      }
-      return sequence;
-    }
-    updateGridPositions() {
-      const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
-      const viewScale = this.viewTransform.scale;
-      let bufferFactor;
-      if (viewScale >= 14)
-        bufferFactor = 4;
-      else if (viewScale >= 9)
-        bufferFactor = 3;
-      else if (viewScale >= 4)
-        bufferFactor = 2;
-      else if (viewScale <= 0.5)
-        bufferFactor = 6;
-      else
-        bufferFactor = 1.5;
-      const visibleWidth = canvasWidth / viewScale * bufferFactor;
-      const visibleHeight = canvasHeight / viewScale * bufferFactor;
-      const worldCenterX = -this.viewTransform.x / viewScale + canvasWidth / 2 / viewScale;
-      const worldCenterY = -this.viewTransform.y / viewScale + canvasHeight / 2 / viewScale;
-      const gridWidth = this.dimensions.totalWidth;
-      const gridHeight = this.dimensions.totalHeight;
-      this.gridItems.forEach((item) => {
-        const relativeX = item.x - worldCenterX;
-        const relativeY = item.y - worldCenterY;
-        const wrapX = Math.floor((relativeX + visibleWidth / 2) / gridWidth);
-        const wrapY = Math.floor((relativeY + visibleHeight / 2) / gridHeight);
-        if (wrapX !== 0)
-          item.x -= wrapX * gridWidth;
-        if (wrapY !== 0)
-          item.y -= wrapY * gridHeight;
-      });
-      if (viewScale > 4) {
-        this.momentum.x *= 0.5;
-        this.momentum.y *= 0.5;
-      }
-    }
-    setupGrid(options) {
-      this.calculateGridDimensions(options);
-      this.gridItems = [];
-      const baseColumns = this.dimensions.columnCount;
-      const baseRows = Math.max(
-        Math.ceil(this.images.length / baseColumns),
-        this.dimensions.rowCount
-      );
-      const baseGridPattern = this.createBaseGrid(this.images.length, baseColumns);
-      const startCol = Math.floor(-this.dimensions.columnCount / 2);
-      const startRow = Math.floor(-this.dimensions.rowCount / 2);
-      const cellWidth = this.dimensions.itemWidth + this.dimensions.padding;
-      const cellHeight = this.dimensions.itemHeight + this.dimensions.padding;
-      const occupiedPositions = /* @__PURE__ */ new Set();
-      for (let row = startRow; row <= startRow + this.dimensions.rowCount; row++) {
-        for (let col = startCol; col <= startCol + this.dimensions.columnCount; col++) {
-          const wrappedRow = (row % baseRows + baseRows) % baseRows;
-          const wrappedCol = (col % baseColumns + baseColumns) % baseColumns;
-          const baseIndex = wrappedRow * baseColumns + wrappedCol;
-          const imageIndex = baseGridPattern[baseIndex % this.images.length];
-          const x = col * cellWidth;
-          const y = row * cellHeight;
-          const posKey = `${Math.round(x)},${Math.round(y)}`;
-          if (!occupiedPositions.has(posKey)) {
-            occupiedPositions.add(posKey);
-            this.gridItems.push({
-              x,
-              y,
-              width: this.dimensions.itemWidth,
-              height: this.dimensions.itemHeight,
-              imageIndex,
-              opacity: 1,
-              velocity: { x: 0, y: 0 }
-            });
-          }
-        }
-      }
-      const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
-      this.viewTransform = {
-        scale: this.isMobileViewport() ? 2 : this.isTabletViewport() ? 1.5 : 1,
-        x: canvasWidth / 2,
-        y: canvasHeight / 2
-      };
-    }
-    setZoom(factor, originX, originY) {
-      const canvas = this.gl.canvas;
-      const rect = canvas.getBoundingClientRect();
-      const zoomLevels = this.getResponsiveZoomLevels();
-      if (this.viewTransform.scale >= zoomLevels[zoomLevels.length - 1] && factor > 1)
-        return;
-      if (this.viewTransform.scale <= zoomLevels[0] && factor < 1)
-        return;
-      const pixelRatio = window.devicePixelRatio;
-      const centerX = rect.width * pixelRatio / 2;
-      const centerY = rect.height * pixelRatio / 2;
-      const newScale = this.getNextZoomLevel(factor);
-      if (Math.abs(newScale - this.viewTransform.scale) < 1e-3)
-        return;
-      const worldCenterX = (centerX - this.viewTransform.x) / this.viewTransform.scale;
-      const worldCenterY = (centerY - this.viewTransform.y) / this.viewTransform.scale;
-      const newX = centerX - worldCenterX * newScale;
-      const newY = centerY - worldCenterY * newScale;
-      if (this.zoomAnimation) {
-        this.zoomAnimation.kill();
-      }
-      this.isZooming = true;
-      this.targetX = newX;
-      this.targetY = newY;
-      this.zoomAnimation = gsapWithCSS.to(this.viewTransform, {
-        scale: newScale,
-        x: newX,
-        y: newY,
-        duration: 0.3,
-        ease: "power2.out",
-        onUpdate: () => {
-          this.updateGridPositions();
-        },
-        onComplete: () => {
-          this.isZooming = false;
-          this.zoomAnimation = null;
-          this.targetX = this.viewTransform.x;
-          this.targetY = this.viewTransform.y;
-          this.momentum = { x: 0, y: 0 };
-        }
-      });
-    }
-    createMatrix(item, width, height, xOffset, yOffset) {
-      const matrix = new Float32Array(16);
-      const { width: canvasWidth, height: canvasHeight } = this.gl.canvas;
-      const finalWidth = width * this.viewTransform.scale;
-      const finalHeight = height * this.viewTransform.scale;
-      const finalX = (item.x + xOffset) * this.viewTransform.scale + this.viewTransform.x;
-      const finalY = (item.y + yOffset) * this.viewTransform.scale + this.viewTransform.y;
-      matrix[0] = finalWidth * 2 / canvasWidth;
-      matrix[5] = finalHeight * 2 / canvasHeight;
-      matrix[12] = finalX * 2 / canvasWidth - 1;
-      matrix[13] = -finalY * 2 / canvasHeight + 1;
-      matrix[15] = 1;
-      return matrix;
-    }
-    draw() {
-      const { gl } = this;
-      if (!gl || !this.program)
-        return;
-      this.frameCount++;
-      gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-      gl.useProgram(this.program);
-      gl.enableVertexAttribArray(this.locations.position);
-      gl.enableVertexAttribArray(this.locations.texCoord);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
-      gl.vertexAttribPointer(this.locations.position, 2, gl.FLOAT, false, 0, 0);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoord);
-      gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
-      const sortedItems = [...this.gridItems].filter((item) => item.opacity > 0).sort((a, b) => a.imageIndex - b.imageIndex);
-      let currentTexture = null;
-      const newFrameItems = /* @__PURE__ */ new Map();
-      sortedItems.forEach((item) => {
-        const image = this.images[item.imageIndex];
-        if (!image)
-          return;
-        const texture = this.textures.get(image.url);
-        if (!texture)
-          return;
-        const itemKey = `${Math.round(item.x)}-${Math.round(item.y)}-${item.imageIndex}`;
-        newFrameItems.set(itemKey, item);
-        const lastItem = this.lastFrameItems.get(itemKey);
-        const targetOpacity = item.opacity;
-        item.opacity = lastItem ? lastItem.opacity + (targetOpacity - lastItem.opacity) * 0.3 : targetOpacity;
-        if (texture !== currentTexture) {
-          gl.bindTexture(gl.TEXTURE_2D, texture);
-          gl.uniform1i(this.locations.texture, 0);
-          currentTexture = texture;
-        }
-        const dimensions = this.calculateImageDimensions(image, item.width, item.height);
-        const xOffset = (item.width - dimensions.width) / 2;
-        const yOffset = dimensions.offsetY || 0;
-        gl.uniform1f(this.locations.opacity, item.opacity);
-        const matrix = this.createMatrix(item, dimensions.width, dimensions.height, xOffset, yOffset);
-        gl.uniformMatrix4fv(this.locations.matrix, false, matrix);
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-      });
-      this.lastFrameItems = newFrameItems;
-    }
-    async init(options) {
-      await this.loadImages(options.images);
-      this.setupGrid(options);
-      this.isInitialized = true;
-    }
-    start() {
-      if (!this.isInitialized)
-        return;
-      this.isActive = true;
-      this.render();
-    }
-    resize(width, height) {
-      const canvas = this.gl.canvas;
-      const pixelRatio = window.devicePixelRatio;
-      canvas.width = width * pixelRatio;
-      canvas.height = height * pixelRatio;
-      this.gl.viewport(0, 0, canvas.width, canvas.height);
-      this.updateViewportCenter();
-      if (this.isInitialized) {
-        this.setupGrid({
-          columnCount: this.dimensions.columnCount,
-          rowCount: this.dimensions.rowCount,
-          images: this.images.map((img) => img.url),
-          pixelRatio
-        });
-      }
-    }
-    destroy() {
-      this.isActive = false;
-      const { gl } = this;
-      const canvas = gl.canvas;
-      this.textures.forEach((texture) => {
-        gl.deleteTexture(texture);
-      });
-      this.textures.clear();
-      gl.deleteBuffer(this.buffers.position);
-      gl.deleteBuffer(this.buffers.texCoord);
-      gl.useProgram(null);
-      gl.deleteProgram(this.program);
-      if (this.boundEvents) {
-        canvas.removeEventListener("mousedown", this.boundEvents.mouseDown);
-        window.removeEventListener("mousemove", this.boundEvents.mouseMove);
-        window.removeEventListener("mouseup", this.boundEvents.mouseUp);
-        canvas.removeEventListener("touchstart", this.boundEvents.touchStart);
-        window.removeEventListener("touchmove", this.boundEvents.touchMove);
-        window.removeEventListener("touchend", this.boundEvents.touchEnd);
-      }
-    }
-  };
-
-  // src/components/WebGLGrid/ArchiveView.ts
+  // src/components/ArchiveView/ArchiveView.ts
   var ArchiveView = class {
     constructor(container) {
       this.canvas = null;
@@ -9688,12 +9220,6 @@
         );
         return;
       }
-      console.log("Found CMS Image element:", firstImage);
-      console.log("Image data attributes:", {
-        bucket: firstImage.dataset.s3Bucket,
-        prefix: firstImage.dataset.s3Prefix,
-        color: firstImage.dataset.color
-      });
       this.s3Config = {
         bucketUrl: firstImage.dataset.s3Bucket || "",
         prefix: firstImage.dataset.s3Prefix || ""
@@ -9764,85 +9290,86 @@
       }
 
       .archive-zoom {
-  position: fixed;
-  z-index: 9999;
-  display: flex;
-  pointer-events: auto;
-  transition: transform 0.3s ease;
-  bottom: max(2rem, 5svh);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  left: 50%;
-  transform: translateX(-50%);
-  will-change: transform;
-}
+        position: fixed;
+        z-index: 9999;
+        display: flex;
+        pointer-events: auto;
+        transition: transform 0.3s ease;
+        bottom: max(2rem, 5svh);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+        left: 50%;
+        transform: translateX(-50%);
+        will-change: transform;
+      }
 
       @supports not (bottom: 5svh) {
-  .archive-zoom {
-    bottom: max(2rem, calc(var(--vh, 1vh) * 5));
-  }
-}
+        .archive-zoom {
+          bottom: max(2rem, calc(var(--vh, 1vh) * 5));
+        }
+      }
 
-.zoom-button {
-  width: 2.5rem;
-  height: 2.5rem;
-  padding: 0.75rem;
-  background-color: #424242;
-  border: none;
-  cursor: pointer;
-  transition: background-color 0.3s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  border-radius: 0;
-  -webkit-tap-highlight-color: transparent;
-  margin: 0;
-}
+      .zoom-button {
+        width: 2.5rem;
+        height: 2.5rem;
+        padding: 0.75rem;
+        background-color: #424242;
+        border: none;
+        cursor: pointer;
+        transition: background-color 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        border-radius: 0;
+        -webkit-tap-highlight-color: transparent;
+        margin: 0;
+      }
 
-.zoom-button svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
+      .zoom-button svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
 
-/* Desktop hover */
-@media (hover: hover) and (pointer: fine) {
-  .zoom-button:hover {
-    background-color: #2B2B2B;
-  }
-}
+      /* Desktop hover */
+      @media (hover: hover) and (pointer: fine) {
+        .zoom-button:hover {
+          background-color: #2B2B2B;
+        }
+      }
 
-/* Touch/click state for all devices */
-.zoom-button:active {
-  background-color: #2B2B2B;
-}
+      /* Touch/click state for all devices */
+      .zoom-button:active {
+        background-color: #2B2B2B;
+      }
 
-/* Responsive zoom button sizes */
-@media (max-width: 1024px) {
-  .zoom-button {
-    width: 2.75rem;
-    height: 2.75rem;
-    padding: 0.85rem;
-  }
-}
+      /* Responsive zoom button sizes */
+      @media (max-width: 1024px) {
+        .zoom-button {
+          width: 2.75rem;
+          height: 2.75rem;
+          padding: 0.85rem;
+        }
+      }
 
-@media (max-width: 768px) {
-  .zoom-button {
-    width: 3rem;
-    height: 3rem;
-    padding: 0.9rem;
-  }
-  .archive-zoom {
-    bottom: max(2rem, 7svh);
-  }
-}
+      @media (max-width: 768px) {
+        .zoom-button {
+          width: 3rem;
+          height: 3rem;
+          padding: 0.9rem;
+        }
+        .archive-zoom {
+          bottom: max(2rem, 7svh);
+        }
+      }
 
-@media (max-width: 479px) {
-  .zoom-button {
-    width: 3.25rem;
-    height: 3.25rem;
-    padding: 1rem;
-  }
+      @media (max-width: 479px) {
+        .zoom-button {
+          width: 3.25rem;
+          height: 3.25rem;
+          padding: 1rem;
+        }
+      }
     `;
       document.head.appendChild(style);
     }
@@ -9874,11 +9401,11 @@
       document.body.appendChild(this.zoomUI);
       zoomOutBtn.addEventListener("click", (e) => {
         e.preventDefault();
-        this.handleZoom(0.8);
+        this.handleZoom("out");
       });
       zoomInBtn.addEventListener("click", (e) => {
         e.preventDefault();
-        this.handleZoom(1.2);
+        this.handleZoom("in");
       });
     }
     createZoomButton(type, svg) {
@@ -9889,17 +9416,11 @@
       button.innerHTML = svg;
       return button;
     }
-    handleZoom(factor) {
-      if (!this.grid || !this.canvas)
+    handleZoom(action) {
+      if (!this.grid)
         return;
-      const rect = this.canvas.getBoundingClientRect();
-      const center = {
-        x: rect.width / 2,
-        y: rect.height / 2
-      };
-      this.grid.setZoom(factor, center.x, center.y);
+      this.grid.zoom(action);
     }
-    // In ArchiveView.ts, keep only this version of init()
     async init() {
       try {
         console.log("ArchiveView init started");
@@ -9914,7 +9435,16 @@
         console.log("Initializing container");
         await this.initializeContainer();
         console.log("Initializing grid with image count:", this.images.length);
-        await this.initializeGrid();
+        const pixelRatio = Math.min(window.devicePixelRatio, 2);
+        const isMobile = window.matchMedia("(max-width: 768px)").matches || "ontouchstart" in window;
+        if (this.canvas) {
+          this.grid = new ArchiveGrid(this.canvas, {
+            images: this.images,
+            isMobile,
+            pixelRatio
+          });
+          this.grid.start();
+        }
         console.log("Setting up resize observer");
         this.setupResizeObserver();
         this.isTransitioning = false;
@@ -9937,18 +9467,6 @@
         this.canvas.className = "archive-canvas";
         archiveContainer.appendChild(this.canvas);
       }
-    }
-    async initializeGrid() {
-      if (!this.canvas)
-        throw new Error("Canvas not initialized");
-      const isMobile = window.matchMedia("(max-width: 768px)").matches;
-      this.grid = new WebGLGrid(this.canvas);
-      await this.grid.init({
-        images: this.images,
-        columnCount: isMobile ? 2 : 3,
-        rowCount: isMobile ? 3 : 4,
-        pixelRatio: window.devicePixelRatio
-      });
     }
     setupResizeObserver() {
       if (!this.canvas)
@@ -9982,7 +9500,6 @@
         visibility: "visible"
         // Set visibility here to prevent layout shifts
       });
-      this.grid.start();
       const tl = gsapWithCSS.timeline({
         defaults: {
           duration: 1,

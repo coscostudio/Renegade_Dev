@@ -9,7 +9,7 @@ import { videoCacheManager } from './components/video/cacheManager';
 import { initializeVideo } from './components/video/videoLoader';
 gsap.registerPlugin(Draggable);
 
-import { ArchiveView } from './components/WebGLGrid/ArchiveView';
+import { ArchiveView } from './components/ArchiveView';
 
 /// ----- Global Variables ----- //
 let activeLinkBackground: HTMLDivElement | null = null;
