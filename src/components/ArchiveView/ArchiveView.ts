@@ -1,7 +1,12 @@
 import { gsap } from 'gsap';
 
-import { ArchiveGrid } from '../ArchiveGrid';
-import { initS3ImageLoader } from './s3ImageLoader';
+import { ArchiveGrid } from './ArchiveGrid';
+import { GridOptions } from './types';
+
+interface S3Config {
+  bucketUrl: string;
+  prefix?: string;
+}
 
 export class ArchiveView {
   private container: HTMLElement;
@@ -12,10 +17,8 @@ export class ArchiveView {
   private zoomUI: HTMLElement | null = null;
   private isTransitioning = false;
   private cleanup: (() => void) | null = null;
-  private s3Config: {
-    bucketUrl: string;
-    prefix: string;
-  };
+  private s3Config: S3Config;
+  private loadingElement: HTMLElement | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -41,6 +44,7 @@ export class ArchiveView {
     this.setupStyles();
     this.setupViewportDetection();
     this.createZoomUI();
+    this.createLoadingIndicator();
 
     // Start with everything hidden until initialization is complete
     gsap.set(container, { autoAlpha: 0 });
@@ -172,6 +176,39 @@ export class ArchiveView {
         background-color: #2B2B2B;
       }
 
+      /* Loading indicator */
+      .archive-loading {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: #ffffff;
+        font-size: 1rem;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+
+      .archive-loading-spinner {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        border-top-color: #ffffff;
+        animation: archive-spinner 0.8s linear infinite;
+        margin-bottom: 1rem;
+      }
+
+      @keyframes archive-spinner {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
       /* Responsive zoom button sizes */
       @media (max-width: 1024px) {
         .zoom-button {
@@ -260,6 +297,23 @@ export class ArchiveView {
     return button;
   }
 
+  private createLoadingIndicator(): void {
+    this.loadingElement = document.createElement('div');
+    this.loadingElement.className = 'archive-loading';
+
+    const spinner = document.createElement('div');
+    spinner.className = 'archive-loading-spinner';
+
+    const text = document.createElement('div');
+    text.textContent = 'Loading images...';
+
+    this.loadingElement.appendChild(spinner);
+    this.loadingElement.appendChild(text);
+
+    // Hide initially
+    gsap.set(this.loadingElement, { autoAlpha: 0 });
+  }
+
   private handleZoom(action: 'in' | 'out'): void {
     if (!this.grid) return;
 
@@ -276,55 +330,165 @@ export class ArchiveView {
         throw new Error('No S3 bucket URL provided');
       }
 
-      // Load images first
-      console.log('Loading images from S3...');
-      const s3Loader = initS3ImageLoader(this.s3Config);
-      this.images = await s3Loader.loadImagesFromBucket();
-      console.log('Loaded URLs:', this.images);
-
-      // Initialize container and canvas
-      console.log('Initializing container');
+      // Add loading indicator
       await this.initializeContainer();
 
-      // Create grid with our new implementation
+      if (this.loadingElement && this.canvas && this.canvas.parentElement) {
+        this.canvas.parentElement.appendChild(this.loadingElement);
+        gsap.to(this.loadingElement, { autoAlpha: 1, duration: 0.3 });
+      }
+
+      // Load images first
+      console.log('Loading images from S3...');
+      this.images = await this.loadImagesFromS3();
+      console.log('Loaded URLs:', this.images.length);
+
+      // Create grid with the new implementation
       console.log('Initializing grid with image count:', this.images.length);
 
       // Get device pixel ratio but cap it for performance reasons
-      const pixelRatio = Math.min(window.devicePixelRatio, 2);
+      const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
 
       // Check if mobile device
       const isMobile = window.matchMedia('(max-width: 768px)').matches || 'ontouchstart' in window;
 
+      // Set up grid options
+      const gridOptions: GridOptions = {
+        images: this.images,
+        pixelRatio,
+        columnCount: isMobile ? 4 : 6,
+        rowCount: isMobile ? 4 : 6,
+      };
+
       // Initialize our new ArchiveGrid implementation
       if (this.canvas) {
-        this.grid = new ArchiveGrid(this.canvas, {
-          images: this.images,
-          isMobile,
-          pixelRatio,
-        });
+        this.grid = new ArchiveGrid(this.canvas);
 
-        // Start the grid
-        this.grid.start();
+        // Set up resize handling
+        console.log('Setting up resize observer');
+        this.setupResizeObserver();
+
+        // Initialize the grid
+        await this.grid.init(gridOptions);
       }
 
-      // Set up resize handling
-      console.log('Setting up resize observer');
-      this.setupResizeObserver();
+      // Hide loading indicator
+      if (this.loadingElement) {
+        gsap.to(this.loadingElement, {
+          autoAlpha: 0,
+          duration: 0.3,
+          onComplete: () => {
+            this.loadingElement?.remove();
+          },
+        });
+      }
 
       this.isTransitioning = false;
       console.log('ArchiveView init completed');
     } catch (error) {
       console.error('Failed to initialize archive view:', error);
+
+      // Hide loading indicator on error
+      if (this.loadingElement) {
+        this.loadingElement.innerHTML = `
+          <div>Error loading images</div>
+          <div style="font-size: 0.875rem; opacity: 0.7; margin-top: 0.5rem;">Please try refreshing the page</div>
+        `;
+
+        gsap.to(this.loadingElement, {
+          autoAlpha: 0,
+          duration: 0.3,
+          delay: 3,
+          onComplete: () => {
+            this.loadingElement?.remove();
+          },
+        });
+      }
+
       throw error;
     }
   }
 
+  private async loadImagesFromS3(): Promise<string[]> {
+    try {
+      const prefix = this.s3Config.prefix
+        ? this.s3Config.prefix.endsWith('/')
+          ? this.s3Config.prefix
+          : `${this.s3Config.prefix}/`
+        : '';
+
+      console.log('Using prefix:', prefix);
+
+      const baseUrl = this.s3Config.bucketUrl.endsWith('/')
+        ? this.s3Config.bucketUrl.slice(0, -1)
+        : this.s3Config.bucketUrl;
+
+      console.log('Using base URL:', baseUrl);
+
+      const listUrl = `${baseUrl}?list-type=2&prefix=${prefix}&delimiter=/`;
+      console.log('Fetching image list from:', listUrl);
+
+      const response = await fetch(listUrl, {
+        method: 'GET',
+        mode: 'cors',
+        headers: {
+          Accept: '*/*',
+        },
+      });
+
+      console.log('S3 Response status:', response.status);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const xmlText = await response.text();
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+
+      const contents = xmlDoc.getElementsByTagName('Contents');
+      console.log('Found Contents nodes:', contents.length);
+
+      const keys = Array.from(contents)
+        .map((content) => content.getElementsByTagName('Key')[0]?.textContent)
+        .filter((key) => key && /\.(jpg|jpeg|png|webp)$/i.test(key))
+        .filter(Boolean);
+
+      console.log('Found image keys:', keys.length);
+
+      const urls = keys.map((key) => `${baseUrl}/${key}`);
+
+      // In mobile environments, limit the number of images to avoid memory issues
+      const isMobile = window.matchMedia('(max-width: 768px)').matches || 'ontouchstart' in window;
+      const maxImages = isMobile ? 50 : 100;
+
+      // Randomize the array and take a subset to ensure variety
+      const shuffledUrls = this.shuffleArray(urls).slice(0, maxImages);
+
+      console.log(`Using ${shuffledUrls.length} images (limited from ${urls.length})`);
+
+      return shuffledUrls;
+    } catch (error) {
+      console.error('Failed to load images from S3:', error);
+      return [];
+    }
+  }
+
+  // Fisher-Yates shuffle algorithm for randomizing the image array
+  private shuffleArray<T>(array: T[]): T[] {
+    const newArray = [...array];
+    for (let i = newArray.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+    }
+    return newArray;
+  }
+
   private async initializeContainer(): Promise<void> {
     // Create or find archive container
-    let archiveContainer = this.container.querySelector('#archive-container');
+    let archiveContainer = this.container.querySelector('.archive-container');
     if (!archiveContainer) {
       archiveContainer = document.createElement('div');
-      archiveContainer.id = 'archive-container';
       archiveContainer.className = 'archive-container';
       this.container.appendChild(archiveContainer);
     }
@@ -384,6 +548,9 @@ export class ArchiveView {
       visibility: 'visible', // Set visibility here to prevent layout shifts
     });
 
+    // Start the grid
+    this.grid.start();
+
     // Create master timeline for smooth fade in
     const tl = gsap.timeline({
       defaults: {
@@ -396,7 +563,7 @@ export class ArchiveView {
     // Fade in both elements together
     tl.to([this.canvas, this.zoomUI], {
       autoAlpha: 1,
-      stagger: 0,
+      stagger: 0.1,
     });
   }
 
@@ -446,6 +613,11 @@ export class ArchiveView {
     if (this.zoomUI) {
       this.zoomUI.remove();
       this.zoomUI = null;
+    }
+
+    if (this.loadingElement) {
+      this.loadingElement.remove();
+      this.loadingElement = null;
     }
 
     // Remove styles

@@ -8995,12 +8995,14 @@
   init_live_reload();
   function detectDeviceCapabilities() {
     const isMobile = window.innerWidth <= 768 || "ontouchstart" in window;
-    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-    const maxTextureSize = isMobile ? 1024 : 2048;
-    const columnCount = isMobile ? 2 : 3;
-    const rowCount = isMobile ? 3 : 4;
-    const dragMultiplier = isMobile ? 4.5 : 2.5;
-    const maxConcurrentLoads = isMobile ? 2 : 4;
+    const isTablet = !isMobile && window.innerWidth <= 1024;
+    const rawPixelRatio = window.devicePixelRatio || 1;
+    const pixelRatio = isMobile ? Math.min(rawPixelRatio, 2) : rawPixelRatio;
+    const maxTextureSize = isMobile ? 1024 : isTablet ? 2048 : 4096;
+    const columnCount = isMobile ? 4 : isTablet ? 5 : 6;
+    const rowCount = isMobile ? 4 : isTablet ? 5 : 6;
+    const dragMultiplier = isMobile ? 1.5 : 1;
+    const maxConcurrentLoads = isMobile ? 2 : isTablet ? 4 : 6;
     return {
       isMobile,
       pixelRatio,
@@ -9011,8 +9013,72 @@
       maxConcurrentLoads
     };
   }
+  function lerp(start, end, t) {
+    t = Math.max(0, Math.min(1, t));
+    return start * (1 - t) + end * t;
+  }
   function isPowerOf2(value) {
-    return (value & value - 1) === 0;
+    return (value & value - 1) === 0 && value !== 0;
+  }
+  function createShader(gl, source, type) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      const info = gl.getShaderInfoLog(shader);
+      gl.deleteShader(shader);
+      throw new Error(`Shader compile error: ${info}`);
+    }
+    return shader;
+  }
+  function createProgram(gl, vertShader, fragShader) {
+    const program = gl.createProgram();
+    gl.attachShader(program, vertShader);
+    gl.attachShader(program, fragShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      const info = gl.getProgramInfoLog(program);
+      gl.deleteProgram(program);
+      throw new Error(`Program link error: ${info}`);
+    }
+    return program;
+  }
+  function resizeCanvas(canvas, pixelRatio) {
+    const displayWidth = canvas.clientWidth;
+    const displayHeight = canvas.clientHeight;
+    const needResize = canvas.width !== displayWidth * pixelRatio || canvas.height !== displayHeight * pixelRatio;
+    if (needResize) {
+      canvas.width = displayWidth * pixelRatio;
+      canvas.height = displayHeight * pixelRatio;
+    }
+  }
+  function stringToColor(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    let color = "#";
+    for (let i = 0; i < 3; i++) {
+      const value = hash >> i * 8 & 255;
+      color += ("00" + value.toString(16)).substr(-2);
+    }
+    return color;
+  }
+  function checkWebpSupport() {
+    return new Promise((resolve) => {
+      const webpImg = new Image();
+      webpImg.onload = () => resolve(true);
+      webpImg.onerror = () => resolve(false);
+      webpImg.src = "data:image/webp;base64,UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAAAfQ//73v/+BiOh/AAA=";
+    });
+  }
+  function checkAvifSupport() {
+    return new Promise((resolve) => {
+      const avifImg = new Image();
+      avifImg.onload = () => resolve(true);
+      avifImg.onerror = () => resolve(false);
+      avifImg.src = "data:image/avif;base64,AAAAIGZ0eXBhdmlmAAAAAGF2aWZtaWYxbWlhZk1BMUIAAADybWV0YQAAAAAAAAAoaGRscgAAAAAAAAAAcGljdAAAAAAAAAAAAAAAAGxpYmF2aWYAAAAADnBpdG0AAAAAAAEAAAAeaWxvYwAAAABEAAABAAEAAAABAAABGgAAAB0AAAAoaWluZgAAAAAAAQAAABppbmZlAgAAAAABAABhdjAxQ29sb3IAAAAAamlwcnAAAABLaXBjbwAAABRpc3BlAAAAAAAAAAIAAAACAAAAEHBpeGkAAAAAAwgICAAAAAxhdjFDgQ0MAAAAABNjb2xybmNseAACAAIAAYAAAAAXaXBtYQAAAAAAAAABAAEEAQKDBAAAACVtZGF0EgAKCBgANogQEAwgMg8f8D///8WfhwB8+ErK42A=";
+    });
   }
 
   // src/components/ArchiveGrid/TextureManager.ts
@@ -9023,18 +9089,57 @@
       this.loadingQueue = [];
       this.activeLoads = 0;
       this.maxConcurrentLoads = 3;
+      this.supportedFormats = { webp: false, avif: false };
+      this.isFormatDetectionComplete = false;
       this.gl = gl;
       this.deviceSettings = deviceSettings;
       this.maxConcurrentLoads = deviceSettings.maxConcurrentLoads;
+      this.placeholderTexture = this.createEmptyTexture("#303030");
+      this.formatDetectionPromise = this.detectSupportedFormats();
+    }
+    // Detect which image formats the browser supports
+    async detectSupportedFormats() {
+      try {
+        this.supportedFormats.webp = await checkWebpSupport();
+        this.supportedFormats.avif = await checkAvifSupport();
+        console.log("Supported formats:", this.supportedFormats);
+      } catch (error) {
+        console.warn("Error detecting format support:", error);
+        this.supportedFormats.webp = false;
+        this.supportedFormats.avif = false;
+      }
+      this.isFormatDetectionComplete = true;
     }
     // Method to queue a texture for loading with priority
     queueTexture(url, priority, callback, isHD = false) {
+      if (this.textures.has(url) && this.imageInfo.has(url)) {
+        const texture = this.textures.get(url);
+        const info = this.imageInfo.get(url);
+        callback(texture, info);
+        return;
+      }
+      const existingItem = this.loadingQueue.find((item) => item.url === url && item.isHD === isHD);
+      if (existingItem) {
+        if (priority < existingItem.priority) {
+          existingItem.priority = priority;
+          this.loadingQueue.sort((a, b) => a.priority - b.priority);
+        }
+        const originalCallback = existingItem.callback;
+        existingItem.callback = (texture, info) => {
+          originalCallback(texture, info);
+          callback(texture, info);
+        };
+        return;
+      }
       this.loadingQueue.push({ url, priority, callback, isHD });
       this.loadingQueue.sort((a, b) => a.priority - b.priority);
       this.processQueue();
     }
     // Process the loading queue respecting concurrent load limits
-    processQueue() {
+    async processQueue() {
+      if (!this.isFormatDetectionComplete) {
+        await this.formatDetectionPromise;
+      }
       if (this.activeLoads >= this.maxConcurrentLoads || this.loadingQueue.length === 0) {
         return;
       }
@@ -9050,6 +9155,16 @@
         this.processQueue();
         return;
       }
+      const placeholderInfo = {
+        url: nextItem.url,
+        element: null,
+        width: 1,
+        height: 1,
+        isLoaded: false,
+        isHD: nextItem.isHD,
+        color: stringToColor(nextItem.url)
+      };
+      nextItem.callback(this.placeholderTexture, placeholderInfo);
       this.loadImage(nextItem.url, nextItem.isHD).then(({ image, imageInfo }) => {
         const texture = this.createTexture(image, {
           useMipmaps: !this.deviceSettings.isMobile && isPowerOf2(image.width) && isPowerOf2(image.height)
@@ -9057,13 +9172,32 @@
         this.textures.set(nextItem.url, texture);
         this.imageInfo.set(nextItem.url, imageInfo);
         nextItem.callback(texture, imageInfo);
-        this.activeLoads--;
-        this.processQueue();
+        if (this.deviceSettings.isMobile && this.textures.size > 50) {
+          this.cleanUpLeastRecentlyUsed(10);
+        }
       }).catch((error) => {
         console.error(`Failed to load texture: ${nextItem.url}`, error);
+        nextItem.callback(this.placeholderTexture, placeholderInfo);
+      }).finally(() => {
         this.activeLoads--;
         this.processQueue();
       });
+    }
+    // Clean up least recently used textures for mobile devices
+    cleanUpLeastRecentlyUsed(count) {
+      const textureUrls = Array.from(this.textures.keys());
+      if (textureUrls.length <= count)
+        return;
+      const toRemove = textureUrls.slice(0, count);
+      toRemove.forEach((url) => {
+        const texture = this.textures.get(url);
+        if (texture) {
+          this.gl.deleteTexture(texture);
+          this.textures.delete(url);
+          this.imageInfo.delete(url);
+        }
+      });
+      console.log(`Cleaned up ${count} textures to save memory`);
     }
     // Load an image and return both the image element and its info
     async loadImage(url, isHD = false) {
@@ -9079,8 +9213,8 @@
             height: img.naturalHeight,
             isLoaded: true,
             isHD,
-            color: "#000000"
-            // Default color, can be updated later
+            color: stringToColor(url)
+            // Use real color extraction in production
           };
           resolve({ image: img, imageInfo });
         };
@@ -9088,35 +9222,79 @@
           reject(new Error(`Failed to load image: ${resizedUrl}`));
         };
         img.src = resizedUrl;
+        if (this.deviceSettings.isMobile) {
+          setTimeout(() => {
+            if (!img.complete) {
+              img.src = "";
+              reject(new Error(`Timeout loading image: ${resizedUrl}`));
+            }
+          }, 1e4);
+        }
       });
     }
     // Resize image URL based on device and HD settings
     getResizedImageUrl(url, isHD) {
-      const urlObj = new URL(url);
-      const params = new URLSearchParams(urlObj.search);
-      const size = isHD ? this.deviceSettings.isMobile ? 1e3 : 1600 : this.deviceSettings.isMobile ? 500 : 800;
-      params.set("h", String(Math.min(size, this.deviceSettings.maxTextureSize)));
-      params.set("q", isHD ? "80" : "60");
-      if (this.supportsWebP()) {
-        params.set("fm", "webp");
+      try {
+        const urlObj = new URL(url);
+        const params = new URLSearchParams(urlObj.search);
+        const sizeFactor = this.deviceSettings.pixelRatio;
+        const baseSize = isHD ? this.deviceSettings.isMobile ? 600 : 1200 : this.deviceSettings.isMobile ? 300 : 600;
+        const size = Math.round(baseSize * sizeFactor);
+        if (url.includes("fit=") || url.includes("height=") || url.includes("width=")) {
+          if (url.includes("height=") || url.includes("h=")) {
+            params.set("h", String(Math.min(size, this.deviceSettings.maxTextureSize)));
+          } else if (url.includes("width=") || url.includes("w=")) {
+            params.set("w", String(Math.min(size, this.deviceSettings.maxTextureSize)));
+          }
+        } else {
+          params.set("size", String(Math.min(size, this.deviceSettings.maxTextureSize)));
+        }
+        if (url.includes("quality=") || url.includes("q=")) {
+          params.set("q", isHD ? "80" : "60");
+        }
+        if (this.supportedFormats.avif) {
+          params.set("fm", "avif");
+        } else if (this.supportedFormats.webp) {
+          params.set("fm", "webp");
+        }
+        urlObj.search = params.toString();
+        return urlObj.toString();
+      } catch (error) {
+        console.warn("Error parsing URL:", error);
+        return url;
       }
-      urlObj.search = params.toString();
-      return urlObj.toString();
     }
-    // Check for WebP support
-    supportsWebP() {
-      const canvas = document.createElement("canvas");
-      if (canvas.getContext && canvas.getContext("2d")) {
-        return canvas.toDataURL("image/webp").indexOf("data:image/webp") === 0;
-      }
-      return false;
+    // Create a colored empty texture for placeholders
+    createEmptyTexture(hexColor = "#303030") {
+      const { gl } = this;
+      const texture = gl.createTexture();
+      const r = parseInt(hexColor.slice(1, 3), 16) || 0;
+      const g = parseInt(hexColor.slice(3, 5), 16) || 0;
+      const b = parseInt(hexColor.slice(5, 7), 16) || 0;
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        1,
+        1,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        new Uint8Array([r, g, b, 255])
+      );
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      return texture;
     }
     // Method to create a texture from an image
     createTexture(image, options = {}) {
       const { gl } = this;
       const texture = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, texture);
-      if (!image || image.width === 0) {
+      if (!image || !image.complete || image.naturalWidth === 0) {
         gl.texImage2D(
           gl.TEXTURE_2D,
           0,
@@ -9133,7 +9311,7 @@
       }
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, options.wrapS || gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, options.wrapT || gl.CLAMP_TO_EDGE);
-      if (options.useMipmaps && isPowerOf2(image.width) && isPowerOf2(image.height)) {
+      if (options.useMipmaps && image && image.complete && isPowerOf2(image.naturalWidth) && isPowerOf2(image.naturalHeight)) {
         gl.texParameteri(
           gl.TEXTURE_2D,
           gl.TEXTURE_MIN_FILTER,
@@ -9181,28 +9359,346 @@
   var GridRenderer = class {
     constructor(canvas, deviceSettings) {
       this.gridItems = [];
+      this.viewport = { left: 0, right: 0, top: 0, bottom: 0 };
+      this.isInitialized = false;
+      this.lastTransform = { scale: 1, x: 0, y: 0 };
+      // Grid configuration
+      this.gridSpacing = 0;
+      this.itemWidth = 0;
+      this.itemHeight = 0;
+      this.totalWidth = 0;
+      this.totalHeight = 0;
+      this.columnCount = 0;
+      this.rowCount = 0;
+      this.animations = /* @__PURE__ */ new Map();
+      // Vertex shader for drawing grid items
+      this.vertexShaderSource = `
+    attribute vec4 a_position;
+    attribute vec2 a_texCoord;
+    uniform mat4 u_matrix;
+    varying vec2 v_texCoord;
+    void main() {
+      gl_Position = u_matrix * a_position;
+      v_texCoord = a_texCoord;
+    }
+  `;
+      // Fragment shader for drawing grid items with transitions and effects
+      this.fragmentShaderSource = `
+    precision mediump float;
+    uniform sampler2D u_texture;
+    uniform float u_opacity;
+    uniform float u_grayscale;
+    uniform float u_r;
+    uniform float u_g;
+    uniform float u_b;
+    varying vec2 v_texCoord;
+    
+    void main() {
+      vec4 texColor = texture2D(u_texture, v_texCoord);
+      
+      // Apply background color for transparent areas
+      texColor = vec4(
+        mix(u_r, texColor.r, texColor.a),
+        mix(u_g, texColor.g, texColor.a),
+        mix(u_b, texColor.b, texColor.a),
+        max(texColor.a, 0.1)
+      );
+      
+      // Apply grayscale effect
+      if (u_grayscale > 0.0) {
+        float gray = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
+        texColor.rgb = mix(texColor.rgb, vec3(gray), u_grayscale);
+      }
+      
+      // Apply opacity
+      gl_FragColor = vec4(texColor.rgb, texColor.a * u_opacity);
+    }
+  `;
       this.gl = canvas.getContext("webgl", {
         antialias: true,
-        premultipliedAlpha: false
+        premultipliedAlpha: false,
+        alpha: true
       });
+      if (!this.gl) {
+        throw new Error("WebGL not supported");
+      }
       this.deviceSettings = deviceSettings;
       this.initWebGL();
       this.textureManager = new TextureManager(this.gl, deviceSettings);
+      resizeCanvas(canvas, deviceSettings.pixelRatio);
     }
-    // Initialize WebGL context, shaders, etc.
+    // Initialize WebGL context, shaders, buffers, etc.
     initWebGL() {
+      const { gl } = this;
+      const vertexShader = createShader(gl, this.vertexShaderSource, gl.VERTEX_SHADER);
+      const fragmentShader = createShader(gl, this.fragmentShaderSource, gl.FRAGMENT_SHADER);
+      this.program = createProgram(gl, vertexShader, fragmentShader);
+      this.locations = {
+        position: gl.getAttribLocation(this.program, "a_position"),
+        texCoord: gl.getAttribLocation(this.program, "a_texCoord"),
+        matrix: gl.getUniformLocation(this.program, "u_matrix"),
+        texture: gl.getUniformLocation(this.program, "u_texture"),
+        opacity: gl.getUniformLocation(this.program, "u_opacity"),
+        grayscale: gl.getUniformLocation(this.program, "u_grayscale"),
+        backgroundR: gl.getUniformLocation(this.program, "u_r"),
+        backgroundG: gl.getUniformLocation(this.program, "u_g"),
+        backgroundB: gl.getUniformLocation(this.program, "u_b")
+      };
+      const positionBuffer = gl.createBuffer();
+      const texCoordBuffer = gl.createBuffer();
+      this.buffers = {
+        position: positionBuffer,
+        texCoord: texCoordBuffer
+      };
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]),
+        gl.STATIC_DRAW
+      );
+      gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]),
+        gl.STATIC_DRAW
+      );
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.clearColor(0, 0, 0, 0);
     }
     // Set up the grid with proper dimensions
-    setupGrid(options) {
+    async setupGrid(options) {
+      const { gl } = this;
+      const { width, height } = gl.canvas;
+      const { pixelRatio, columnCount, rowCount } = this.deviceSettings;
+      this.columnCount = options.columnCount || columnCount;
+      this.rowCount = options.rowCount || rowCount;
+      const maxWidth = width * 0.8;
+      const itemsPerRow = this.columnCount;
+      this.itemWidth = Math.min(maxWidth / itemsPerRow, 300 * pixelRatio);
+      this.itemHeight = this.itemWidth * 0.75;
+      this.gridSpacing = this.itemWidth * 0.2;
+      this.totalWidth = (this.itemWidth + this.gridSpacing) * this.columnCount;
+      this.totalHeight = (this.itemHeight + this.gridSpacing) * this.rowCount;
+      this.viewport = {
+        left: -this.totalWidth / 2,
+        right: this.totalWidth / 2,
+        top: -this.totalHeight / 2,
+        bottom: this.totalHeight / 2
+      };
+      this.generateGridItems(options.images);
+      this.isInitialized = true;
     }
-    // Update visibility of grid items based on viewport
+    // Generate grid items with positions and load textures
+    async generateGridItems(imageUrls) {
+      this.gridItems = [];
+      const availableImages = [...imageUrls];
+      const cellWidth = this.itemWidth + this.gridSpacing;
+      const cellHeight = this.itemHeight + this.gridSpacing;
+      const startX = -this.totalWidth / 2 + this.itemWidth / 2;
+      const startY = -this.totalHeight / 2 + this.itemHeight / 2;
+      for (let row = 0; row < this.rowCount; row++) {
+        for (let col = 0; col < this.columnCount; col++) {
+          const imageIndex = Math.floor(Math.random() * availableImages.length);
+          const imageUrl = availableImages[imageIndex];
+          const x = startX + col * cellWidth;
+          const y = startY + row * cellHeight;
+          const gridItem = {
+            x,
+            y,
+            width: this.itemWidth,
+            height: this.itemHeight,
+            textureUrl: imageUrl,
+            isVisible: true,
+            opacity: 0,
+            // Start with 0 opacity for fade-in animation
+            zIndex: 0,
+            velocity: { x: 0, y: 0 }
+          };
+          this.animations.set(`${x}-${y}`, {
+            target: 1,
+            // Target opacity
+            current: 0
+            // Current opacity
+          });
+          this.textureManager.queueTexture(
+            imageUrl,
+            row * this.columnCount + col,
+            // Priority based on position
+            (texture, info) => {
+              gridItem.isVisible = true;
+            }
+          );
+          this.gridItems.push(gridItem);
+        }
+      }
+    }
+    // Update visibility of grid items based on viewport transform
     updateVisibility(transform) {
+      if (!this.isInitialized)
+        return;
+      const { gl } = this;
+      const { width, height } = gl.canvas;
+      this.lastTransform = { ...transform };
+      const visibleArea = {
+        left: -transform.x / transform.scale,
+        right: (width - transform.x) / transform.scale,
+        top: -transform.y / transform.scale,
+        bottom: (height - transform.y) / transform.scale
+      };
+      const padding = Math.max(this.itemWidth, this.itemHeight) * 2;
+      const extendedVisibleArea = {
+        left: visibleArea.left - padding,
+        right: visibleArea.right + padding,
+        top: visibleArea.top - padding,
+        bottom: visibleArea.bottom + padding
+      };
+      this.wrapGridItems(extendedVisibleArea, transform.scale);
+      for (const item of this.gridItems) {
+        const itemBounds = {
+          left: item.x - item.width / 2,
+          right: item.x + item.width / 2,
+          top: item.y - item.height / 2,
+          bottom: item.y + item.height / 2
+        };
+        const isVisible = !(itemBounds.right < extendedVisibleArea.left || itemBounds.left > extendedVisibleArea.right || itemBounds.bottom < extendedVisibleArea.top || itemBounds.bottom > extendedVisibleArea.bottom);
+        item.isVisible = isVisible;
+        const animKey = `${item.x}-${item.y}`;
+        if (this.animations.has(animKey)) {
+          this.animations.get(animKey).target = isVisible ? 1 : 0;
+        } else {
+          this.animations.set(animKey, { target: isVisible ? 1 : 0, current: item.opacity });
+        }
+        if (isVisible && transform.scale > 2) {
+          this.textureManager.queueTexture(
+            item.textureUrl,
+            0,
+            // High priority
+            (texture, info) => {
+            },
+            true
+            // Request HD version
+          );
+        }
+      }
+    }
+    // Wrap grid items to create an infinite effect
+    wrapGridItems(visibleArea, scale) {
+      const gridWidth = this.totalWidth;
+      const gridHeight = this.totalHeight;
+      for (const item of this.gridItems) {
+        if (item.x - item.width / 2 > visibleArea.right) {
+          item.x -= gridWidth;
+        } else if (item.x + item.width / 2 < visibleArea.left) {
+          item.x += gridWidth;
+        }
+        if (item.y - item.height / 2 > visibleArea.bottom) {
+          item.y -= gridHeight;
+        } else if (item.y + item.height / 2 < visibleArea.top) {
+          item.y += gridHeight;
+        }
+      }
     }
     // Draw the grid to the canvas
     draw(transform) {
+      if (!this.isInitialized)
+        return;
+      const { gl } = this;
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.useProgram(this.program);
+      gl.enableVertexAttribArray(this.locations.position);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
+      gl.vertexAttribPointer(this.locations.position, 2, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(this.locations.texCoord);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoord);
+      gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
+      this.updateAnimations();
+      const sortedItems = [...this.gridItems].filter((item) => item.isVisible).sort((a, b) => a.zIndex - b.zIndex);
+      for (const item of sortedItems) {
+        if (item.opacity <= 0.01)
+          continue;
+        const texture = this.textureManager.getTexture(item.textureUrl);
+        if (!texture)
+          continue;
+        const matrix = this.calculateItemMatrix(item, transform);
+        const imageInfo = this.textureManager.getImageInfo(item.textureUrl);
+        const color = imageInfo?.color || "#000000";
+        const { r, g, b } = this.hexToRgb(color);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.uniform1i(this.locations.texture, 0);
+        gl.uniformMatrix4fv(this.locations.matrix, false, matrix);
+        gl.uniform1f(this.locations.opacity, item.opacity);
+        gl.uniform1f(this.locations.grayscale, 0);
+        gl.uniform1f(this.locations.backgroundR, r / 255);
+        gl.uniform1f(this.locations.backgroundG, g / 255);
+        gl.uniform1f(this.locations.backgroundB, b / 255);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      }
+    }
+    // Update animation states
+    updateAnimations() {
+      for (const [key, anim] of this.animations.entries()) {
+        anim.current = lerp(anim.current, anim.target, 0.1);
+        for (const item of this.gridItems) {
+          if (`${item.x}-${item.y}` === key) {
+            item.opacity = anim.current;
+            break;
+          }
+        }
+      }
+    }
+    // Calculate transformation matrix for an item
+    calculateItemMatrix(item, transform) {
+      const { gl } = this;
+      const { width, height } = gl.canvas;
+      const matrix = new Float32Array(16);
+      matrix[0] = 1;
+      matrix[5] = 1;
+      matrix[10] = 1;
+      matrix[15] = 1;
+      const x = item.x * transform.scale + transform.x;
+      const y = item.y * transform.scale + transform.y;
+      const w = item.width * transform.scale;
+      const h = item.height * transform.scale;
+      matrix[0] = w * 2 / width;
+      matrix[5] = h * 2 / height;
+      matrix[12] = x * 2 / width - 1 + w / width;
+      matrix[13] = -y * 2 / height + 1 - h / height;
+      return matrix;
+    }
+    // Helper to convert hex color to RGB components
+    hexToRgb(hex) {
+      if (!hex || !hex.match(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/)) {
+        return { r: 0, g: 0, b: 0 };
+      }
+      const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+      const fullHex = hex.replace(shorthandRegex, (m, r, g, b) => {
+        return r + r + g + g + b + b;
+      });
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(fullHex);
+      return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+      } : { r: 0, g: 0, b: 0 };
     }
     // Clean up resources
     destroy() {
+      const { gl } = this;
+      gl.deleteProgram(this.program);
+      gl.deleteBuffer(this.buffers.position);
+      gl.deleteBuffer(this.buffers.texCoord);
+      this.textureManager.releaseAllTextures();
+      this.isInitialized = false;
+      this.gridItems = [];
+      this.animations.clear();
+    }
+    // Resize handler
+    resize(width, height) {
+      const { gl } = this;
+      resizeCanvas(gl.canvas, this.deviceSettings.pixelRatio);
+      gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     }
   };
 
@@ -9211,26 +9707,275 @@
   var InteractionManager = class {
     constructor(canvas, transform, deviceSettings) {
       this.isDragging = false;
+      this.lastMouseX = 0;
+      this.lastMouseY = 0;
+      this.lastTouchX = 0;
+      this.lastTouchY = 0;
       this.velocity = { x: 0, y: 0 };
+      this.animationId = null;
+      this.multiTouchDistance = null;
+      this.multiTouchCenter = null;
+      this.isZooming = false;
+      this.zoomFactor = 1;
+      this.minScale = 0.5;
+      this.maxScale = 5;
+      this.pinchStartScale = 1;
+      this.transformCallbacks = [];
+      this.isActive = true;
+      // Handle mouse down events
+      this.handleMouseDown = (e) => {
+        if (!this.isActive)
+          return;
+        e.preventDefault();
+        this.isDragging = true;
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
+        this.velocity = { x: 0, y: 0 };
+        this.canvas.style.cursor = "grabbing";
+      };
+      // Handle mouse move events
+      this.handleMouseMove = (e) => {
+        if (!this.isActive || !this.isDragging)
+          return;
+        const deltaX = e.clientX - this.lastMouseX;
+        const deltaY = e.clientY - this.lastMouseY;
+        const scaledDeltaX = deltaX * this.deviceSettings.dragMultiplier;
+        const scaledDeltaY = deltaY * this.deviceSettings.dragMultiplier;
+        this.handleDrag(scaledDeltaX, scaledDeltaY);
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
+      };
+      // Handle mouse up events
+      this.handleMouseUp = () => {
+        if (!this.isActive)
+          return;
+        this.isDragging = false;
+        this.canvas.style.cursor = "grab";
+      };
+      // Handle touch start events
+      this.handleTouchStart = (e) => {
+        if (!this.isActive)
+          return;
+        e.preventDefault();
+        if (e.touches.length === 1) {
+          this.isDragging = true;
+          this.isZooming = false;
+          this.multiTouchDistance = null;
+          this.multiTouchCenter = null;
+          this.lastTouchX = e.touches[0].clientX;
+          this.lastTouchY = e.touches[0].clientY;
+          this.velocity = { x: 0, y: 0 };
+        } else if (e.touches.length === 2) {
+          this.isDragging = false;
+          this.isZooming = true;
+          const touch1 = e.touches[0];
+          const touch2 = e.touches[1];
+          this.multiTouchDistance = Math.hypot(
+            touch2.clientX - touch1.clientX,
+            touch2.clientY - touch1.clientY
+          );
+          this.multiTouchCenter = {
+            x: (touch1.clientX + touch2.clientX) / 2,
+            y: (touch1.clientY + touch2.clientY) / 2
+          };
+          this.pinchStartScale = this.transform.scale;
+        }
+      };
+      // Handle touch move events
+      this.handleTouchMove = (e) => {
+        if (!this.isActive)
+          return;
+        e.preventDefault();
+        if (e.touches.length === 1 && this.isDragging) {
+          const deltaX = e.touches[0].clientX - this.lastTouchX;
+          const deltaY = e.touches[0].clientY - this.lastTouchY;
+          const scaledDeltaX = deltaX * this.deviceSettings.dragMultiplier;
+          const scaledDeltaY = deltaY * this.deviceSettings.dragMultiplier;
+          this.handleDrag(scaledDeltaX, scaledDeltaY);
+          this.lastTouchX = e.touches[0].clientX;
+          this.lastTouchY = e.touches[0].clientY;
+        } else if (e.touches.length === 2 && this.isZooming) {
+          const touch1 = e.touches[0];
+          const touch2 = e.touches[1];
+          const newDistance = Math.hypot(
+            touch2.clientX - touch1.clientX,
+            touch2.clientY - touch1.clientY
+          );
+          if (this.multiTouchDistance !== null) {
+            const scaleFactor = newDistance / this.multiTouchDistance;
+            const newCenter = {
+              x: (touch1.clientX + touch2.clientX) / 2,
+              y: (touch1.clientY + touch2.clientY) / 2
+            };
+            if (this.multiTouchCenter !== null) {
+              this.handlePinchZoom(this.pinchStartScale * scaleFactor, newCenter.x, newCenter.y);
+            }
+          }
+        }
+      };
+      // Handle touch end events
+      this.handleTouchEnd = () => {
+        if (!this.isActive)
+          return;
+        this.isDragging = false;
+        this.isZooming = false;
+        this.multiTouchDistance = null;
+        this.multiTouchCenter = null;
+      };
+      // Handle mouse wheel events for zooming
+      this.handleWheel = (e) => {
+        if (!this.isActive)
+          return;
+        e.preventDefault();
+        const wheelDelta = e.deltaY;
+        const zoomFactor = wheelDelta > 0 ? 0.9 : 1.1;
+        this.zoom(zoomFactor, e.clientX, e.clientY);
+      };
       this.canvas = canvas;
-      this.transform = transform;
+      this.transform = { ...transform };
+      this.targetTransform = { ...transform };
       this.deviceSettings = deviceSettings;
       this.bindEvents();
     }
     // Bind interaction events (mouse/touch)
     bindEvents() {
+      this.canvas.addEventListener("mousedown", this.handleMouseDown);
+      window.addEventListener("mousemove", this.handleMouseMove);
+      window.addEventListener("mouseup", this.handleMouseUp);
+      this.canvas.addEventListener("touchstart", this.handleTouchStart, { passive: false });
+      window.addEventListener("touchmove", this.handleTouchMove, { passive: false });
+      window.addEventListener("touchend", this.handleTouchEnd);
+      window.addEventListener("touchcancel", this.handleTouchEnd);
+      this.canvas.addEventListener("wheel", this.handleWheel, { passive: false });
+      this.startAnimationLoop();
     }
     // Handle dragging logic
     handleDrag(deltaX, deltaY) {
+      this.targetTransform.x += deltaX;
+      this.targetTransform.y += deltaY;
+      this.velocity = {
+        x: deltaX * 0.8,
+        // Reduce intensity a bit
+        y: deltaY * 0.8
+      };
+    }
+    // Handle pinch zoom
+    handlePinchZoom(newScale, centerX, centerY) {
+      newScale = Math.max(this.minScale, Math.min(this.maxScale, newScale));
+      const rect = this.canvas.getBoundingClientRect();
+      const canvasX = centerX - rect.left;
+      const canvasY = centerY - rect.top;
+      const worldX = (canvasX - this.transform.x) / this.transform.scale;
+      const worldY = (canvasY - this.transform.y) / this.transform.scale;
+      const newX = canvasX - worldX * newScale;
+      const newY = canvasY - worldY * newScale;
+      this.targetTransform.scale = newScale;
+      this.targetTransform.x = newX;
+      this.targetTransform.y = newY;
+    }
+    // Zoom handling with mouse position as the center
+    zoom(factor, originX, originY) {
+      const newScale = Math.max(
+        this.minScale,
+        Math.min(this.maxScale, this.transform.scale * factor)
+      );
+      const rect = this.canvas.getBoundingClientRect();
+      const canvasX = originX - rect.left;
+      const canvasY = originY - rect.top;
+      const worldX = (canvasX - this.transform.x) / this.transform.scale;
+      const worldY = (canvasY - this.transform.y) / this.transform.scale;
+      const newX = canvasX - worldX * newScale;
+      const newY = canvasY - worldY * newScale;
+      this.targetTransform.scale = newScale;
+      this.targetTransform.x = newX;
+      this.targetTransform.y = newY;
     }
     // Update position based on momentum
     update() {
+      if (!this.isActive)
+        return this.transform;
+      if (!this.isDragging && !this.isZooming) {
+        this.velocity.x *= 0.95;
+        this.velocity.y *= 0.95;
+        if (Math.abs(this.velocity.x) > 0.1 || Math.abs(this.velocity.y) > 0.1) {
+          this.targetTransform.x += this.velocity.x;
+          this.targetTransform.y += this.velocity.y;
+        } else {
+          this.velocity.x = 0;
+          this.velocity.y = 0;
+        }
+      }
+      this.transform.x = lerp(this.transform.x, this.targetTransform.x, 0.2);
+      this.transform.y = lerp(this.transform.y, this.targetTransform.y, 0.2);
+      this.transform.scale = lerp(this.transform.scale, this.targetTransform.scale, 0.2);
+      this.notifyTransformChanged();
+      return this.transform;
     }
-    // Zoom handling
-    zoom(factor, originX, originY) {
+    // Handle animation frame updates
+    startAnimationLoop() {
+      const updateLoop = () => {
+        if (this.isActive) {
+          this.update();
+          this.animationId = requestAnimationFrame(updateLoop);
+        }
+      };
+      this.animationId = requestAnimationFrame(updateLoop);
+    }
+    // Add callback for transform changes
+    addTransformCallback(callback) {
+      this.transformCallbacks.push(callback);
+    }
+    // Notify all transform callbacks
+    notifyTransformChanged() {
+      for (const callback of this.transformCallbacks) {
+        callback({ ...this.transform });
+      }
+    }
+    // Set a specific transform
+    setTransform(transform) {
+      if (transform.x !== void 0)
+        this.targetTransform.x = transform.x;
+      if (transform.y !== void 0)
+        this.targetTransform.y = transform.y;
+      if (transform.scale !== void 0)
+        this.targetTransform.scale = transform.scale;
+    }
+    // Get current transform
+    getTransform() {
+      return { ...this.transform };
+    }
+    // Reset transform to initial state
+    resetTransform() {
+      this.targetTransform = {
+        x: 0,
+        y: 0,
+        scale: 1
+      };
+      this.velocity = { x: 0, y: 0 };
+    }
+    // Set active state
+    setActive(active) {
+      this.isActive = active;
+      if (active && !this.animationId) {
+        this.startAnimationLoop();
+      }
     }
     // Clean up
     destroy() {
+      if (this.animationId !== null) {
+        cancelAnimationFrame(this.animationId);
+        this.animationId = null;
+      }
+      this.canvas.removeEventListener("mousedown", this.handleMouseDown);
+      window.removeEventListener("mousemove", this.handleMouseMove);
+      window.removeEventListener("mouseup", this.handleMouseUp);
+      this.canvas.removeEventListener("touchstart", this.handleTouchStart);
+      window.removeEventListener("touchmove", this.handleTouchMove);
+      window.removeEventListener("touchend", this.handleTouchEnd);
+      window.removeEventListener("touchcancel", this.handleTouchEnd);
+      this.canvas.removeEventListener("wheel", this.handleWheel);
+      this.transformCallbacks = [];
+      this.isActive = false;
     }
   };
 

@@ -25,10 +25,9 @@ export interface GridItem {
 // Information about loaded images and their textures
 export interface ImageInfo {
   url: string;
-  element: HTMLImageElement;
+  element: HTMLImageElement | null;
   width: number;
   height: number;
-  texture?: WebGLTexture;
   isLoaded: boolean;
   isHD?: boolean;
   color: string;
@@ -60,17 +59,6 @@ export interface WebGLBuffers {
   texCoord: WebGLBuffer;
 }
 
-// Grid dimensions for layout
-export interface GridDimensions {
-  itemWidth: number;
-  itemHeight: number;
-  padding: number;
-  columnCount: number;
-  rowCount: number;
-  totalWidth: number;
-  totalHeight: number;
-}
-
 // Options for texture creation
 export interface TextureOptions {
   useMipmaps?: boolean;
@@ -83,8 +71,9 @@ export interface TextureOptions {
 // Options for initializing the grid
 export interface GridOptions {
   images: string[];
-  isMobile: boolean;
-  pixelRatio: number;
+  pixelRatio?: number;
+  columnCount?: number;
+  rowCount?: number;
 }
 
 // Options for viewing area
@@ -93,4 +82,55 @@ export interface Viewport {
   right: number;
   top: number;
   bottom: number;
+}
+
+// Animation state tracking
+export interface AnimationState {
+  value: number;
+  target: number;
+  velocity: number;
+}
+
+// Image loading options
+export interface ImageLoadOptions {
+  priority: number;
+  isHD?: boolean;
+}
+
+// Image data for the grid
+export interface ImageData {
+  url: string;
+  width: number;
+  height: number;
+  color?: string;
+}
+
+// Performance monitoring metrics
+export interface PerformanceMetrics {
+  fps: number;
+  renderTime: number;
+  loadedTextures: number;
+  visibleItems: number;
+}
+
+// Zoom level configuration
+export interface ZoomLevel {
+  scale: number;
+  gridSpacing: number;
+  itemSize: number;
+}
+
+// Update event for the grid
+export interface GridUpdateEvent {
+  transform: Transform;
+  visibleItems: number;
+  timestamp: number;
+}
+
+// Batch texture loading progress
+export interface LoadingProgress {
+  loaded: number;
+  total: number;
+  isComplete: boolean;
+  failedUrls: string[];
 }
