@@ -1,32 +1,24 @@
 import { gsap } from 'gsap';
 
-import { ArchiveGrid } from '../ArchiveGrid';
-import { GridOptions } from '../ArchiveGrid/types';
-
-interface S3Config {
-  bucketUrl: string;
-  prefix?: string;
-}
+import { ArchiveGrid } from './ArchiveGrid';
 
 export class ArchiveView {
-  private container: HTMLElement;
-  private canvas: HTMLCanvasElement | null = null;
-  private grid: ArchiveGrid | null = null;
-  private images: string[] = [];
-  private resizeObserver: ResizeObserver | null = null;
-  private zoomUI: HTMLElement | null = null;
-  private isTransitioning = false;
-  private cleanup: (() => void) | null = null;
-  private s3Config: S3Config;
-  private loadingElement: HTMLElement | null = null;
-
-  constructor(container: HTMLElement) {
+  constructor(container) {
     this.container = container;
+    this.canvas = null;
+    this.grid = null;
+    this.images = [];
+    this.resizeObserver = null;
+    this.zoomUI = null;
+    this.isTransitioning = false;
+    this.cleanup = null;
+    this.loadingElement = null;
+
     console.log('ArchiveView initialized with container:', container);
 
     // Find the CMS image element to extract configuration
-    const firstImage = container.querySelector('.cms-image') as HTMLImageElement;
-    if (!firstImage) {
+    const configElement = container.querySelector('.cms-image');
+    if (!configElement) {
       console.error(
         'No .cms-image elements found in container. Container HTML:',
         container.innerHTML
@@ -36,8 +28,8 @@ export class ArchiveView {
 
     // Store configuration data for later use
     this.s3Config = {
-      bucketUrl: firstImage.dataset.s3Bucket || '',
-      prefix: firstImage.dataset.s3Prefix || '',
+      bucketUrl: configElement.dataset.s3Bucket || '',
+      prefix: configElement.dataset.s3Prefix || '',
     };
 
     // Set up basic styling and UI immediately
@@ -52,7 +44,7 @@ export class ArchiveView {
     console.log('Stored S3 config:', this.s3Config);
   }
 
-  private setupViewportDetection(): void {
+  setupViewportDetection() {
     // Add viewport unit support detection
     const viewportUnitsSupported = CSS.supports('height', '100svh');
     document.documentElement.dataset.viewportUnits = viewportUnitsSupported ? 'svh' : 'vh';
@@ -81,7 +73,10 @@ export class ArchiveView {
     }
   }
 
-  private setupStyles(): void {
+  setupStyles() {
+    // Skip if styles are already added
+    if (document.querySelector('style[data-archive-styles]')) return;
+
     // Add required CSS styles for the archive container and UI
     const style = document.createElement('style');
     style.setAttribute('data-archive-styles', '');
@@ -241,7 +236,7 @@ export class ArchiveView {
     document.head.appendChild(style);
   }
 
-  private createZoomUI(): void {
+  createZoomUI() {
     // Create zoom controls UI
     this.zoomUI = document.createElement('div');
     this.zoomUI.className = 'archive-zoom';
@@ -288,7 +283,7 @@ export class ArchiveView {
     });
   }
 
-  private createZoomButton(type: 'in' | 'out', svg: string): HTMLButtonElement {
+  createZoomButton(type, svg) {
     const button = document.createElement('button');
     button.className = 'zoom-button';
     button.setAttribute('data-zoom', type);
@@ -297,7 +292,7 @@ export class ArchiveView {
     return button;
   }
 
-  private createLoadingIndicator(): void {
+  createLoadingIndicator() {
     this.loadingElement = document.createElement('div');
     this.loadingElement.className = 'archive-loading';
 
@@ -314,14 +309,14 @@ export class ArchiveView {
     gsap.set(this.loadingElement, { autoAlpha: 0 });
   }
 
-  private handleZoom(action: 'in' | 'out'): void {
+  handleZoom(action) {
     if (!this.grid) return;
 
     // Forward zoom action to grid implementation
     this.grid.zoom(action);
   }
 
-  public async init(): Promise<void> {
+  async init() {
     try {
       console.log('ArchiveView init started');
       this.isTransitioning = true;
@@ -343,7 +338,7 @@ export class ArchiveView {
       this.images = await this.loadImagesFromS3();
       console.log('Loaded URLs:', this.images.length);
 
-      // Create grid with the new implementation
+      // Create grid with the implementation
       console.log('Initializing grid with image count:', this.images.length);
 
       // Get device pixel ratio but cap it for performance reasons
@@ -353,14 +348,14 @@ export class ArchiveView {
       const isMobile = window.matchMedia('(max-width: 768px)').matches || 'ontouchstart' in window;
 
       // Set up grid options
-      const gridOptions: GridOptions = {
+      const gridOptions = {
         images: this.images,
         pixelRatio,
         columnCount: isMobile ? 4 : 6,
         rowCount: isMobile ? 4 : 6,
       };
 
-      // Initialize our new ArchiveGrid implementation
+      // Initialize the ArchiveGrid
       if (this.canvas) {
         this.grid = new ArchiveGrid(this.canvas);
 
@@ -378,7 +373,9 @@ export class ArchiveView {
           autoAlpha: 0,
           duration: 0.3,
           onComplete: () => {
-            this.loadingElement?.remove();
+            if (this.loadingElement && this.loadingElement.parentNode) {
+              this.loadingElement.parentNode.removeChild(this.loadingElement);
+            }
           },
         });
       }
@@ -400,7 +397,9 @@ export class ArchiveView {
           duration: 0.3,
           delay: 3,
           onComplete: () => {
-            this.loadingElement?.remove();
+            if (this.loadingElement && this.loadingElement.parentNode) {
+              this.loadingElement.parentNode.removeChild(this.loadingElement);
+            }
           },
         });
       }
@@ -409,7 +408,7 @@ export class ArchiveView {
     }
   }
 
-  private async loadImagesFromS3(): Promise<string[]> {
+  async loadImagesFromS3() {
     try {
       const prefix = this.s3Config.prefix
         ? this.s3Config.prefix.endsWith('/')
@@ -475,7 +474,7 @@ export class ArchiveView {
   }
 
   // Fisher-Yates shuffle algorithm for randomizing the image array
-  private shuffleArray<T>(array: T[]): T[] {
+  shuffleArray(array) {
     const newArray = [...array];
     for (let i = newArray.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -484,7 +483,7 @@ export class ArchiveView {
     return newArray;
   }
 
-  private async initializeContainer(): Promise<void> {
+  async initializeContainer() {
     // Create or find archive container
     let archiveContainer = this.container.querySelector('.archive-container');
     if (!archiveContainer) {
@@ -499,9 +498,11 @@ export class ArchiveView {
       this.canvas.className = 'archive-canvas';
       archiveContainer.appendChild(this.canvas);
     }
+
+    return archiveContainer;
   }
 
-  private setupResizeObserver(): void {
+  setupResizeObserver() {
     if (!this.canvas) return;
 
     // Create resize observer with debounced handler
@@ -511,26 +512,26 @@ export class ArchiveView {
       }, 150)
     );
 
-    this.resizeObserver.observe(this.canvas);
+    this.resizeObserver.observe(this.canvas.parentElement);
   }
 
-  private handleResize = (): void => {
+  handleResize = () => {
     if (!this.canvas || !this.grid) return;
 
     // Get actual dimensions and tell grid to resize
-    const rect = this.canvas.parentElement!.getBoundingClientRect();
+    const rect = this.canvas.parentElement.getBoundingClientRect();
     this.grid.resize(rect.width, rect.height);
   };
 
-  private debounce(func: Function, wait: number) {
-    let timeout: NodeJS.Timeout;
-    return (...args: any[]) => {
+  debounce(func, wait) {
+    let timeout;
+    return (...args) => {
       clearTimeout(timeout);
       timeout = setTimeout(() => func.apply(this, args), wait);
     };
   }
 
-  public show(): void {
+  show() {
     console.log('Show method called', {
       hasCanvas: !!this.canvas,
       hasGrid: !!this.grid,
@@ -567,7 +568,7 @@ export class ArchiveView {
     });
   }
 
-  public async fadeOut(): Promise<void> {
+  async fadeOut() {
     // Create a timeline for coordinated fade out
     return new Promise((resolve) => {
       if (!this.canvas && !this.zoomUI) return resolve();
@@ -585,7 +586,7 @@ export class ArchiveView {
     });
   }
 
-  public destroy(): void {
+  destroy() {
     // Clean up grid
     if (this.grid) {
       this.grid.destroy();
@@ -606,22 +607,26 @@ export class ArchiveView {
 
     // Remove elements
     if (this.canvas) {
-      this.canvas.remove();
+      if (this.canvas.parentNode) {
+        this.canvas.parentNode.removeChild(this.canvas);
+      }
       this.canvas = null;
     }
 
     if (this.zoomUI) {
-      this.zoomUI.remove();
+      if (this.zoomUI.parentNode) {
+        this.zoomUI.parentNode.removeChild(this.zoomUI);
+      }
       this.zoomUI = null;
     }
 
-    if (this.loadingElement) {
-      this.loadingElement.remove();
+    if (this.loadingElement && this.loadingElement.parentNode) {
+      this.loadingElement.parentNode.removeChild(this.loadingElement);
       this.loadingElement = null;
     }
 
-    // Remove styles
-    const style = document.querySelector('style[data-archive-styles]');
-    if (style) style.remove();
+    // Remove styles (optional, might be shared with other instances)
+    // const style = document.querySelector('style[data-archive-styles]');
+    // if (style) style.remove();
   }
 }
